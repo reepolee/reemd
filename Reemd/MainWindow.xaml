@@ -191,22 +191,29 @@
                         </Border>
 
                         <!-- Editor text area -->
-                        <TextBox x:Name="Editor" Grid.Row="2"
-                                 Padding="32"
-                                 BorderThickness="0"
-                                 AcceptsTab="True"
-                                 AcceptsReturn="True"
-                                 IsUndoEnabled="True"
-                                 AllowDrop="True"
-                                 FontFamily="Cascadia Code"
-                                 FontSize="13"
-                                 VerticalScrollBarVisibility="Auto"
-                                 HorizontalScrollBarVisibility="Auto"
-                                 SpellCheck.IsEnabled="True"
-                                 TextChanged="Editor_TextChanged"
-                                 SelectionChanged="Editor_SelectionChanged"
-                                 PreviewKeyDown="Editor_PreviewKeyDown"
-                                 PreviewMouseWheel="Editor_PreviewMouseWheel" />
+                        <Grid Grid.Row="2">
+                            <TextBox x:Name="Editor"
+                                     Padding="32"
+                                     BorderThickness="0"
+                                     AcceptsTab="True"
+                                     AcceptsReturn="True"
+                                     IsUndoEnabled="True"
+                                     AllowDrop="True"
+                                     FontFamily="Cascadia Code"
+                                     FontSize="13"
+                                     VerticalScrollBarVisibility="Auto"
+                                     HorizontalScrollBarVisibility="Auto"
+                                     SpellCheck.IsEnabled="True"
+                                     TextChanged="Editor_TextChanged"
+                                     SelectionChanged="Editor_SelectionChanged"
+                                     PreviewKeyDown="Editor_PreviewKeyDown"
+                                     PreviewMouseWheel="Editor_PreviewMouseWheel" />
+                            <TextBlock x:Name="EditorFontSizeLabel" Text=""
+                                       FontSize="11" Opacity="0.7"
+                                       VerticalAlignment="Bottom" HorizontalAlignment="Right"
+                                       Margin="0,0,8,8"
+                                       IsHitTestVisible="False" />
+                        </Grid>
                     </Grid>
                 </Border>
 
@@ -218,10 +225,12 @@
 
                 <!-- Preview (right side) - rendered markdown in WebView2 -->
                 <Border Grid.Column="2" x:Name="PreviewBorder" Background="White" BorderBrush="#E0E0E0" BorderThickness="1">
-                    <wv2:WebView2 x:Name="Preview"
-                                  Margin="0"
-                                  AllowExternalDrop="False"
-                                  DefaultBackgroundColor="White" />
+                    <Grid>
+                        <wv2:WebView2 x:Name="Preview"
+                                      Margin="0"
+                                      AllowExternalDrop="False"
+                                      DefaultBackgroundColor="White" />
+                    </Grid>
                 </Border>
             </Grid>
         </Grid>
@@ -249,6 +258,9 @@
             </StatusBarItem>
             <StatusBarItem Grid.Column="1">
                 <TextBlock x:Name="SavedIndicator" Text="💾 Saved" FontSize="11" Foreground="#2E7D32" Padding="4,2" />
+            </StatusBarItem>
+            <StatusBarItem Grid.Column="2" HorizontalContentAlignment="Right">
+                <TextBlock x:Name="FontSizeText" Text="" FontSize="11" Padding="4,2" />
             </StatusBarItem>
             <StatusBarItem Grid.Column="3" Padding="2,0">
                 <StackPanel Orientation="Horizontal">

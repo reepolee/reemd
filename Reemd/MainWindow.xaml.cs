@@ -9,7 +9,6 @@ using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using Reemd.Models;
 using Reemd.Services;
-using Hardcodet.Wpf.TaskbarNotification;
 using Microsoft.Win32;
 
 namespace Reemd;
@@ -69,7 +68,10 @@ public partial class MainWindow : Window
     private double _editorFontSize = 13;
     private double _previewFontSize = 14;
     private bool _isDarkMode;
+    private bool _wordWrapEnabled;
     private string? _pendingPreviewHtml;
+    private string? _pendingLastFile;
+    private readonly Dictionary<string, CursorPosition> _loadedCursorPositions = [];
 
     public MainWindow(string? startupFolder = null)
     {
@@ -83,10 +85,12 @@ public partial class MainWindow : Window
         Preview.NavigationCompleted += Preview_NavigationCompleted;
         Preview.CoreWebView2InitializationCompleted += Preview_CoreWebView2InitializationCompleted;
 
-        // Always load settings first — restores window position, column widths, folder, etc.
+        // Load settings first — restores window position, column widths, saved font sizes, etc.
+        // NOTE: this does NOT call LoadMarkdownFolder; that happens in a single call below
+        // so ALL settings (including PreviewFontSize) are applied before the preview renders.
         LoadSettings();
 
-        // Then load folder — startup arg overrides the folder from settings
+        // Determine folder — startup arg overrides the folder from settings
         string folder;
         if (!string.IsNullOrWhiteSpace(startupFolder))
         {
@@ -100,11 +104,32 @@ public partial class MainWindow : Window
             folder = _markdownFolder;
         }
 
+        // Single folder load — this runs AFTER all settings are applied,
+        // so the preview renders with the correct saved font size.
         LoadMarkdownFolder(folder);
+
+        // Restore cursor positions from settings BEFORE selecting any file,
+        // so LoadFile → RestoreCursorPosition can find saved positions.
+        // (LoadMarkdownFolder clears _cursorPositions, so we re-apply them.)
+        foreach (var path in _loadedCursorPositions.Keys)
+        {
+            _cursorPositions[path] = _loadedCursorPositions[path];
+        }
+        _loadedCursorPositions.Clear();
+
+        // Re-select the last file from settings (stored by LoadSettings)
+        if (_pendingLastFile != null && _fileList.Contains(Path.GetFileName(_pendingLastFile)))
+        {
+            FileListBox.SelectedItem = Path.GetFileName(_pendingLastFile);
+            _pendingLastFile = null;
+        }
 
         // Apply saved font sizes to editor and preview
         ApplyEditorFontSize();
         ApplyPreviewFontSize();
+
+        // Apply saved word wrap state
+        Editor.TextWrapping = _wordWrapEnabled ? TextWrapping.Wrap : TextWrapping.NoWrap;
 
         // Apply saved theme to editor
         ApplyTheme();
@@ -123,6 +148,9 @@ public partial class MainWindow : Window
             ApplyPreviewFontSize();
         };
         this.Loaded += onLoaded;
+
+        // Alt+Z handled at Window level for reliability (Alt is reserved for mnemonics in WPF)
+        this.PreviewKeyDown += MainWindow_PreviewKeyDown;
 
         _ = CheckGitHubAuthAsync();
     }
@@ -395,18 +423,24 @@ public partial class MainWindow : Window
     private void ApplyEditorFontSize()
     {
         Editor.FontSize = _editorFontSize;
-        SetStatus($"Editor font: {_editorFontSize}px");
+        ShowCombinedFontSizes();
         SaveSettings();
     }
 
     private void ApplyPreviewFontSize()
     {
-        SetStatus($"Preview font: {_previewFontSize}px");
+        ShowCombinedFontSizes();
         if (!string.IsNullOrEmpty(Editor.Text))
         {
             UpdatePreview(Editor.Text, _previewFontSize);
         }
         SaveSettings();
+    }
+
+    private void ShowCombinedFontSizes()
+    {
+        EditorFontSizeLabel.Text = $"{_editorFontSize}px";
+        FontSizeText.Text = $"Editor: {_editorFontSize}px  |  Preview: {_previewFontSize}px";
     }
 
     /// <summary>
@@ -854,6 +888,23 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
+    /// <summary>
+    /// Window-level handler for keyboard shortcuts that can be intercepted
+    /// at the element level (e.g., Alt+Z — WPF reserves Alt for mnemonics).
+    /// </summary>
+    private void MainWindow_PreviewKeyDown(object? sender, KeyEventArgs e)
+    {
+        // Alt+Z — toggle word wrap (handled at Window level for reliability)
+        if (Keyboard.Modifiers == ModifierKeys.Alt && e.Key == Key.Z)
+        {
+            _wordWrapEnabled = !_wordWrapEnabled;
+            Editor.TextWrapping = _wordWrapEnabled ? TextWrapping.Wrap : TextWrapping.NoWrap;
+            SetStatus(_wordWrapEnabled ? "Word wrap: On" : "Word wrap: Off");
+            SaveSettings();
+            e.Handled = true;
+        }
+    }
+
     private void Editor_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         // Ctrl+Tab / Ctrl+Shift+Tab — file navigation (needs non-strict modifier check)
@@ -1162,6 +1213,8 @@ public partial class MainWindow : Window
             AppStatusBar.Background = new SolidColorBrush(Color.FromRgb(0x00, 0x7A, 0xCC));
             AppStatusBar.BorderBrush = new SolidColorBrush(Color.FromRgb(0x00, 0x7A, 0xCC));
             StatusText.Foreground = new SolidColorBrush(Colors.White);
+            EditorFontSizeLabel.Foreground = new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88));
+            FontSizeText.Foreground = new SolidColorBrush(Colors.White);
             CursorPositionText.Foreground = new SolidColorBrush(Colors.White);
             GitHubStatusText.Foreground = new SolidColorBrush(Colors.White);
 
@@ -1219,6 +1272,8 @@ public partial class MainWindow : Window
             AppStatusBar.Background = new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0));
             AppStatusBar.BorderBrush = new SolidColorBrush(Color.FromRgb(0xD0, 0xD0, 0xD0));
             StatusText.Foreground = SystemColors.WindowTextBrush;
+            EditorFontSizeLabel.Foreground = new SolidColorBrush(Color.FromRgb(0x77, 0x77, 0x77));
+            FontSizeText.Foreground = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66));
             CursorPositionText.Foreground = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66));
             GitHubStatusText.Foreground = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66));
 
@@ -1252,13 +1307,13 @@ public partial class MainWindow : Window
             else
             {
                 GitHubStatusText.Text = "\u2601\ufe0f Synced";
-                ((App)Application.Current).ShowNotification("Reemd", "Synced to GitHub", BalloonIcon.Info);
+                SetStatus("Synced to GitHub");
             }
         }
         else
         {
             GitHubStatusText.Text = $"\u2601\ufe0f {message}";
-            ((App)Application.Current).ShowNotification("Reemd", $"Sync failed: {message}", BalloonIcon.Error);
+            SetStatus($"Sync failed: {message}");
         }
     }
 
@@ -1614,14 +1669,10 @@ public partial class MainWindow : Window
                     case "Folder":
                         var folder = parts[1].Trim();
                         if (Directory.Exists(folder))
-                            LoadMarkdownFolder(folder);
+                            _markdownFolder = folder;
                         break;
                     case "LastFile":
-                        var lastFile = parts[1].Trim();
-                        if (_fileList.Contains(Path.GetFileName(lastFile)))
-                        {
-                            FileListBox.SelectedItem = Path.GetFileName(lastFile);
-                        }
+                        _pendingLastFile = parts[1].Trim();
                         break;
                     case "CursorPosition":
                         var cursorData = parts[1].Trim().Split('|');
@@ -1629,7 +1680,7 @@ public partial class MainWindow : Window
                             && int.TryParse(cursorData[2], out var selStart)
                             && int.TryParse(cursorData[3], out var selLength))
                         {
-                            _cursorPositions[cursorData[0]] = new CursorPosition(offset, selStart, selLength);
+                            _loadedCursorPositions[cursorData[0]] = new CursorPosition(offset, selStart, selLength);
                         }
                         break;
                     case "WindowLeft":
@@ -1672,6 +1723,10 @@ public partial class MainWindow : Window
                     case "DarkMode":
                         if (bool.TryParse(parts[1].Trim(), out var dark))
                             _isDarkMode = dark;
+                        break;
+                    case "WordWrapEnabled":
+                        if (bool.TryParse(parts[1].Trim(), out var wrap))
+                            _wordWrapEnabled = wrap;
                         break;
                 }
             }
@@ -1728,7 +1783,8 @@ public partial class MainWindow : Window
                 $"PreviewColumnWidth={PreviewColumn.Width}",
                 $"EditorFontSize={_editorFontSize}",
                 $"PreviewFontSize={_previewFontSize}",
-                $"DarkMode={_isDarkMode}"
+                $"DarkMode={_isDarkMode}",
+                $"WordWrapEnabled={_wordWrapEnabled}"
             };
 
             foreach (var kvp in _scrollRatios)

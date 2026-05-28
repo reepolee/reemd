@@ -32,14 +32,6 @@ public partial class App : System.Windows.Application
         _mainWindow.Activate();
     }
 
-    /// <summary>
-    /// Shows a balloon notification from the system tray icon.
-    /// </summary>
-    internal void ShowNotification(string title, string text, BalloonIcon icon = BalloonIcon.Info)
-    {
-        _trayIcon?.ShowBalloonTip(title, text, icon);
-    }
-
     private void SetupTrayIcon()
     {
         _trayIcon = new TaskbarIcon
