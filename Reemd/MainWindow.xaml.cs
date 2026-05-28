@@ -1494,6 +1494,10 @@ public partial class MainWindow : Window
                 InsertLinkMarkdown();
                 e.Handled = true;
                 break;
+            case Key.V:
+                if (PasteImageFromClipboard())
+                    e.Handled = true;
+                break;
             case Key.Home:
                 ScrollEditorToTop();
                 e.Handled = true;
@@ -1820,6 +1824,98 @@ public partial class MainWindow : Window
         var targetUri = new Uri(targetPath);
         var relative = baseUri.MakeRelativeUri(targetUri).ToString();
         return Uri.UnescapeDataString(relative);
+    }
+
+    #endregion
+
+    #region Image Paste from Clipboard
+
+    /// <summary>
+    /// Checks the clipboard for an image (bitmap data) or an image URL (text).
+    /// If a bitmap is found, saves it to the markdown folder with a unique filename
+    /// and inserts ![alt](filename) at the caret.
+    /// If an image URL is found, inserts ![Image](url) directly.
+    /// Returns true if an image was pasted, false otherwise
+    /// (so the caller can let default paste behavior handle plain text).
+    /// </summary>
+    private bool PasteImageFromClipboard()
+    {
+        // First check: clipboard has actual image bitmap
+        if (Clipboard.ContainsImage())
+        {
+            try
+            {
+                var bitmapSource = Clipboard.GetImage();
+                if (bitmapSource == null) return false;
+
+                // Generate unique filename with timestamp
+                var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+                var fileName = $"image-{timestamp}.png";
+                var filePath = Path.Combine(_markdownFolder, fileName);
+
+                // Ensure uniqueness (in case of multiple pastes in the same second)
+                int counter = 1;
+                while (File.Exists(filePath))
+                {
+                    fileName = $"image-{timestamp}-{counter}.png";
+                    filePath = Path.Combine(_markdownFolder, fileName);
+                    counter++;
+                }
+
+                // Save as PNG using WPF's PngBitmapEncoder
+                var dir = Path.GetDirectoryName(filePath);
+                if (dir != null && !Directory.Exists(dir))
+                    Directory.CreateDirectory(dir);
+
+                using var fileStream = new FileStream(filePath, FileMode.Create);
+                var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmapSource));
+                encoder.Save(fileStream);
+
+                // Insert markdown image at the caret position
+                var markdown = $"![{Path.GetFileNameWithoutExtension(fileName)}]({fileName})";
+                var caretIndex = Editor.CaretIndex;
+                Editor.Text = Editor.Text.Insert(caretIndex, markdown);
+                Editor.CaretIndex = caretIndex + markdown.Length;
+
+                // Refresh file list so the new image file appears
+                _isLoadingDocument = true;
+                RefreshFileList();
+                _isLoadingDocument = false;
+
+                SetStatus($"Pasted image: {fileName}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"Failed to paste image: {ex.Message}");
+                return false;
+            }
+        }
+
+        // Second check: clipboard has text that looks like an image URL
+        if (Clipboard.ContainsText())
+        {
+            try
+            {
+                var text = Clipboard.GetText().Trim();
+                if (!string.IsNullOrWhiteSpace(text) && IsImageUrl(text))
+                {
+                    var markdown = $"![Image]({text})";
+                    var caretIndex = Editor.CaretIndex;
+                    Editor.Text = Editor.Text.Insert(caretIndex, markdown);
+                    Editor.CaretIndex = caretIndex + markdown.Length;
+                    SetStatus("Pasted image URL");
+                    return true;
+                }
+            }
+            catch
+            {
+                // Best-effort — if clipboard access fails, fall through to default paste
+            }
+        }
+
+        return false;
     }
 
     #endregion
