@@ -149,8 +149,10 @@ public partial class MainWindow : Window
         };
         this.Loaded += onLoaded;
 
-        // Alt+Z handled at Window level for reliability (Alt is reserved for mnemonics in WPF)
+        // Window-level keyboard/mouse handlers — fire before tunneling to focused control,
+        // so they work even when the WebView2 preview has focus.
         this.PreviewKeyDown += MainWindow_PreviewKeyDown;
+        this.PreviewMouseWheel += Window_PreviewMouseWheel;
 
         _ = CheckGitHubAuthAsync();
     }
@@ -434,13 +436,13 @@ public partial class MainWindow : Window
         {
             UpdatePreview(Editor.Text, _previewFontSize);
         }
-        SaveSettings();
     }
 
     private void ShowCombinedFontSizes()
     {
         EditorFontSizeLabel.Text = $"{_editorFontSize}px";
-        FontSizeText.Text = $"Editor: {_editorFontSize}px  |  Preview: {_previewFontSize}px";
+        FontSizeText.Text = $"Editor: {_editorFontSize}px";
+        PreviewFontSizeText.Text = $"Preview: {_previewFontSize}px";
     }
 
     /// <summary>
@@ -865,48 +867,102 @@ public partial class MainWindow : Window
         Dispatcher.BeginInvoke(SyncEditorToPreview, DispatcherPriority.Background);
     }
 
-    private void Editor_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    /// <summary>
+    /// Fires before the event tunnels to the focused/under-mouse control.
+    /// Handles Ctrl+Shift+Scroll anywhere (even over WebView2) for preview font size,
+    /// and Ctrl+Scroll over the editor for editor font size.
+    /// </summary>
+    private void Window_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        // Ctrl+Shift+Scroll → preview font size
+        // Ctrl+Shift+Scroll → preview font size (works anywhere, even over WebView2)
         if (Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
         {
             _previewFontSize = e.Delta > 0
                 ? Math.Min(_previewFontSize + 1, 48)
                 : Math.Max(_previewFontSize - 1, 8);
             ApplyPreviewFontSize();
+            SaveSettings();
             e.Handled = true;
             return;
         }
 
-        // Ctrl+Scroll → editor font size
-        if (Keyboard.Modifiers != ModifierKeys.Control) return;
-
-        _editorFontSize = e.Delta > 0
-            ? Math.Min(_editorFontSize + 1, 48)
-            : Math.Max(_editorFontSize - 1, 8);
-        ApplyEditorFontSize();
-        e.Handled = true;
+        // Ctrl+Scroll → editor font size (only when over the editor)
+        if (Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            // Check if mouse is over the editor
+            var pos = Mouse.GetPosition(Editor);
+            if (pos.X >= 0 && pos.Y >= 0 && pos.X < Editor.ActualWidth && pos.Y < Editor.ActualHeight)
+            {
+                _editorFontSize = e.Delta > 0
+                    ? Math.Min(_editorFontSize + 1, 48)
+                    : Math.Max(_editorFontSize - 1, 8);
+                ApplyEditorFontSize();
+                e.Handled = true;
+            }
+        }
     }
 
     /// <summary>
-    /// Window-level handler for keyboard shortcuts that can be intercepted
-    /// at the element level (e.g., Alt+Z — WPF reserves Alt for mnemonics).
+    /// Window-level handler for keyboard shortcuts — fires before tunneling reaches
+    /// the focused control (TextBox or WebView2). Handles Alt+Z for word wrap and
+    /// Ctrl+Shift+Plus/Minus/0 for preview font size, even when WebView2 has focus.
     /// </summary>
     private void MainWindow_PreviewKeyDown(object? sender, KeyEventArgs e)
     {
-        // Alt+Z — toggle word wrap (handled at Window level for reliability)
-        if (Keyboard.Modifiers == ModifierKeys.Alt && e.Key == Key.Z)
+        // Alt+Z — toggle word wrap
+        // When Alt is held, WPF reports e.Key = Key.System and e.SystemKey = actual key.
+        if ((Keyboard.IsKeyDown(Key.LeftAlt) || Keyboard.IsKeyDown(Key.RightAlt)) &&
+            (e.Key == Key.Z || e.SystemKey == Key.Z))
         {
-            _wordWrapEnabled = !_wordWrapEnabled;
-            Editor.TextWrapping = _wordWrapEnabled ? TextWrapping.Wrap : TextWrapping.NoWrap;
-            SetStatus(_wordWrapEnabled ? "Word wrap: On" : "Word wrap: Off");
-            SaveSettings();
+            ToggleWordWrap();
             e.Handled = true;
+            return;
+        }
+
+        // Ctrl+Shift+Plus/Minus/0 — preview font size (works even if WebView2 has focus)
+        if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control &&
+            (Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift)
+        {
+            switch (e.Key)
+            {
+                case Key.OemPlus:
+                case Key.Add:
+                    _previewFontSize = Math.Min(_previewFontSize + 1, 48);
+                    ApplyPreviewFontSize();
+                    SaveSettings();
+                    e.Handled = true;
+                    return;
+                case Key.OemMinus:
+                case Key.Subtract:
+                    _previewFontSize = Math.Max(_previewFontSize - 1, 8);
+                    ApplyPreviewFontSize();
+                    SaveSettings();
+                    e.Handled = true;
+                    return;
+                case Key.D0:
+                case Key.NumPad0:
+                    _previewFontSize = 14;
+                    ApplyPreviewFontSize();
+                    SaveSettings();
+                    e.Handled = true;
+                    return;
+            }
         }
     }
 
     private void Editor_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        // Alt+Z — toggle word wrap
+        // When Alt is held, WPF reports e.Key = Key.System and e.SystemKey = actual key.
+        // Also check e.SystemKey since Alt triggers WM_SYSKEYDOWN.
+        if ((Keyboard.IsKeyDown(Key.LeftAlt) || Keyboard.IsKeyDown(Key.RightAlt)) &&
+            (e.Key == Key.Z || e.SystemKey == Key.Z))
+        {
+            ToggleWordWrap();
+            e.Handled = true;
+            return;
+        }
+
         // Ctrl+Tab / Ctrl+Shift+Tab — file navigation (needs non-strict modifier check)
         if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control && e.Key == Key.Tab)
         {
@@ -930,53 +986,27 @@ public partial class MainWindow : Window
             return;
         }
 
-        // Font size shortcuts work with Ctrl OR Ctrl+Shift (preview only)
-        if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+        // Ctrl+Plus/Minus/0 (without Shift) — editor font size (handled when editor has focus)
+        if (Keyboard.Modifiers == ModifierKeys.Control)
         {
-            bool shiftHeld = (Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift;
-
             switch (e.Key)
             {
                 case Key.OemPlus:
                 case Key.Add:
-                    if (shiftHeld)
-                    {
-                        _previewFontSize = Math.Min(_previewFontSize + 1, 48);
-                        ApplyPreviewFontSize();
-                    }
-                    else
-                    {
-                        _editorFontSize = Math.Min(_editorFontSize + 1, 48);
-                        ApplyEditorFontSize();
-                    }
+                    _editorFontSize = Math.Min(_editorFontSize + 1, 48);
+                    ApplyEditorFontSize();
                     e.Handled = true;
                     return;
                 case Key.OemMinus:
                 case Key.Subtract:
-                    if (shiftHeld)
-                    {
-                        _previewFontSize = Math.Max(_previewFontSize - 1, 8);
-                        ApplyPreviewFontSize();
-                    }
-                    else
-                    {
-                        _editorFontSize = Math.Max(_editorFontSize - 1, 8);
-                        ApplyEditorFontSize();
-                    }
+                    _editorFontSize = Math.Max(_editorFontSize - 1, 8);
+                    ApplyEditorFontSize();
                     e.Handled = true;
                     return;
                 case Key.D0:
                 case Key.NumPad0:
-                    if (shiftHeld)
-                    {
-                        _previewFontSize = 14;
-                        ApplyPreviewFontSize();
-                    }
-                    else
-                    {
-                        _editorFontSize = 13;
-                        ApplyEditorFontSize();
-                    }
+                    _editorFontSize = 13;
+                    ApplyEditorFontSize();
                     e.Handled = true;
                     return;
             }
@@ -1215,6 +1245,7 @@ public partial class MainWindow : Window
             StatusText.Foreground = new SolidColorBrush(Colors.White);
             EditorFontSizeLabel.Foreground = new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88));
             FontSizeText.Foreground = new SolidColorBrush(Colors.White);
+            PreviewFontSizeText.Foreground = new SolidColorBrush(Color.FromRgb(0x90, 0xCA, 0xF9)); // lighter blue on dark bar
             CursorPositionText.Foreground = new SolidColorBrush(Colors.White);
             GitHubStatusText.Foreground = new SolidColorBrush(Colors.White);
 
@@ -1274,6 +1305,7 @@ public partial class MainWindow : Window
             StatusText.Foreground = SystemColors.WindowTextBrush;
             EditorFontSizeLabel.Foreground = new SolidColorBrush(Color.FromRgb(0x77, 0x77, 0x77));
             FontSizeText.Foreground = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66));
+            PreviewFontSizeText.Foreground = new SolidColorBrush(Color.FromRgb(0x15, 0x65, 0xC0)); // blue on light bar
             CursorPositionText.Foreground = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66));
             GitHubStatusText.Foreground = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66));
 
@@ -1403,6 +1435,10 @@ public partial class MainWindow : Window
     {
         if (e.IsSuccess)
         {
+            // Disable WebView2's built-in browser zoom (Ctrl+Scroll/Plus/Minus) so it
+            // doesn't intercept our Ctrl+Shift+Scroll/Plus/Minus preview font size control.
+            Preview.CoreWebView2.Settings.IsZoomControlEnabled = false;
+
             Preview.CoreWebView2.WebMessageReceived += OnPreviewWebMessageReceived;
 
             // If there's pending HTML from before initialization, render it now
@@ -1412,6 +1448,10 @@ public partial class MainWindow : Window
                 Preview.NavigateToString(_pendingPreviewHtml);
                 _pendingPreviewHtml = null;
             }
+
+            // Re-apply preview font size now that WebView2 is ready,
+            // ensuring the correct saved font size is always displayed.
+            ApplyPreviewFontSize();
         }
     }
 
@@ -1592,6 +1632,17 @@ public partial class MainWindow : Window
     #endregion
 
     #region Status Updates
+
+    /// <summary>
+    /// Toggles word wrap on the editor and logs the new state to the status bar.
+    /// </summary>
+    private void ToggleWordWrap()
+    {
+        _wordWrapEnabled = !_wordWrapEnabled;
+        Editor.TextWrapping = _wordWrapEnabled ? TextWrapping.Wrap : TextWrapping.NoWrap;
+        SetStatus(_wordWrapEnabled ? "Word wrap: ON" : "Word wrap: OFF");
+        SaveSettings();
+    }
 
     private void SetStatus(string message)
     {
