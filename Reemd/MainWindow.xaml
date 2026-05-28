@@ -65,6 +65,7 @@
                              FontSize="14"
                              SelectionChanged="FileListBox_SelectionChanged"
                              MouseDoubleClick="FileListBox_MouseDoubleClick"
+                             PreviewKeyDown="FileListBox_PreviewKeyDown"
                              VirtualizingStackPanel.IsVirtualizing="True">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
@@ -203,7 +204,6 @@
                                      FontSize="13"
                                      VerticalScrollBarVisibility="Auto"
                                      HorizontalScrollBarVisibility="Auto"
-                                     SpellCheck.IsEnabled="True"
                                      TextChanged="Editor_TextChanged"
                                      SelectionChanged="Editor_SelectionChanged"
                                      PreviewKeyDown="Editor_PreviewKeyDown" />
@@ -247,6 +247,7 @@
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                     </Grid>
                 </ItemsPanelTemplate>
@@ -261,7 +262,7 @@
             <StatusBarItem Grid.Column="2" HorizontalContentAlignment="Right">
                 <StackPanel Orientation="Horizontal">
                     <TextBlock x:Name="FontSizeText" Text="" FontSize="11" Padding="4,2" />
-                    <TextBlock x:Name="PreviewFontSizeText" Text="" FontSize="11" FontWeight="Bold" Padding="4,2" Foreground="#1565C0" />
+                    <TextBlock x:Name="PreviewFontSizeText" Text="" FontSize="11" Padding="4,2" />
                 </StackPanel>
             </StatusBarItem>
             <StatusBarItem Grid.Column="3" Padding="2,0">
@@ -287,6 +288,9 @@
             </StatusBarItem>
             <StatusBarItem Grid.Column="5">
                 <TextBlock x:Name="GitHubStatusText" Text="" FontSize="11" Foreground="#666" Padding="4,2" />
+            </StatusBarItem>
+            <StatusBarItem Grid.Column="6">
+                <TextBlock x:Name="LastSyncText" Text="" FontSize="11" Foreground="#666" Padding="4,2" />
             </StatusBarItem>
         </StatusBar>
     </Grid>

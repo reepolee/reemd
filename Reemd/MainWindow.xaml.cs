@@ -70,6 +70,7 @@ public partial class MainWindow : Window
     private bool _isDarkMode;
     private bool _wordWrapEnabled;
     private string? _pendingPreviewHtml;
+    private DateTime? _lastSyncTime;
     private bool IsEditorFocused => Keyboard.FocusedElement == Editor;
     private string? _pendingLastFile;
     private readonly Dictionary<string, CursorPosition> _loadedCursorPositions = [];
@@ -155,6 +156,9 @@ public partial class MainWindow : Window
         this.PreviewKeyDown += MainWindow_PreviewKeyDown;
         this.PreviewMouseWheel += Window_PreviewMouseWheel;
 
+        // Sync on focus — refreshes 'Last sync' time when returning to the app
+        this.Activated += (_, _) => ScheduleGitHubSync();
+
         _ = CheckGitHubAuthAsync();
     }
 
@@ -192,7 +196,7 @@ public partial class MainWindow : Window
             UpdateSavedIndicator(true);
 
             var files = Directory.GetFiles(_markdownFolder, MarkdownFilter)
-                .OrderBy(f => f)
+                .OrderByDescending(f => File.GetLastWriteTime(f))
                 .ToList();
 
             foreach (var file in files)
@@ -253,28 +257,20 @@ public partial class MainWindow : Window
         try
         {
             var currentSelection = FileListBox.SelectedItem as string;
-            var files = Directory.GetFiles(_markdownFolder, MarkdownFilter)
-                .OrderBy(f => f)
+
+            // Fully rebuild the file list sorted by last write time (most recent first).
+            // This ensures that after saving, the saved file jumps to the top.
+            var orderedFiles = Directory.GetFiles(_markdownFolder, MarkdownFilter)
+                .OrderByDescending(f => File.GetLastWriteTime(f))
                 .ToList();
 
-            foreach (var file in files)
+            _fileList.Clear();
+            foreach (var file in orderedFiles)
             {
                 var fileName = Path.GetFileName(file);
-                if (!_fileList.Contains(fileName))
-                {
-                    _fileList.Add(fileName);
-                    if (!_cursorPositions.ContainsKey(file))
-                        _cursorPositions[file] = new CursorPosition(0, 0, 0);
-                }
-            }
-
-            var toRemove = _fileList
-                .Where(f => !files.Contains(Path.Combine(_markdownFolder, f)))
-                .ToList();
-
-            foreach (var file in toRemove)
-            {
-                _fileList.Remove(file);
+                _fileList.Add(fileName);
+                if (!_cursorPositions.ContainsKey(file))
+                    _cursorPositions[file] = new CursorPosition(0, 0, 0);
             }
 
             UpdateFileCount();
@@ -374,6 +370,7 @@ public partial class MainWindow : Window
             _isDirty = false;
             UpdateSavedIndicator(true);
             ScheduleGitHubSync();
+            RefreshFileList();
         }
         catch (Exception ex)
         {
@@ -812,6 +809,194 @@ public partial class MainWindow : Window
         }
         catch
         {
+        }
+    }
+
+    private void FileListBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        // F2 — rename selected file
+        if (e.Key == Key.F2)
+        {
+            var selectedFile = FileListBox.SelectedItem as string;
+            if (selectedFile == null) return;
+
+            RenameFile(selectedFile);
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>
+    /// Shows a rename dialog for the given filename (without path).
+    /// Renames the file on disk and updates all internal state.
+    /// </summary>
+    private void RenameFile(string fileName)
+    {
+        var oldPath = Path.Combine(_markdownFolder, fileName);
+        if (!File.Exists(oldPath)) return;
+
+        var oldNameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
+
+        // Show rename dialog
+        var bg = _isDarkMode ? Color.FromRgb(0x2D, 0x2D, 0x2D) : Color.FromRgb(0xF0, 0xF0, 0xF0);
+        var fg = _isDarkMode ? Colors.White : Colors.Black;
+
+        var dialog = new Window
+        {
+            Title = "Rename File",
+            Width = 400,
+            Height = 140,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = this,
+            ResizeMode = ResizeMode.NoResize,
+            WindowStyle = WindowStyle.ToolWindow,
+            Background = new SolidColorBrush(bg),
+            Foreground = new SolidColorBrush(fg)
+        };
+
+        var stack = new StackPanel { Margin = new Thickness(12) };
+
+        stack.Children.Add(new TextBlock
+        {
+            Text = "New name:",
+            Foreground = new SolidColorBrush(fg),
+            Margin = new Thickness(0, 0, 0, 6)
+        });
+
+        var textBox = new TextBox
+        {
+            Text = oldNameWithoutExt,
+            Padding = new Thickness(6, 3, 6, 3)
+        };
+        textBox.Focus();
+        textBox.SelectAll();
+
+        var buttonPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 10, 0, 0)
+        };
+
+        var okBtn = new Button
+        {
+            Content = "OK",
+            IsDefault = true,
+            Width = 70,
+            Height = 24,
+            Margin = new Thickness(0, 0, 6, 0)
+        };
+        var cancelBtn = new Button
+        {
+            Content = "Cancel",
+            IsCancel = true,
+            Width = 70,
+            Height = 24
+        };
+
+        buttonPanel.Children.Add(okBtn);
+        buttonPanel.Children.Add(cancelBtn);
+
+        stack.Children.Add(textBox);
+        stack.Children.Add(buttonPanel);
+        dialog.Content = stack;
+
+        dialog.Loaded += (_, _) =>
+        {
+            textBox.Focus();
+            textBox.SelectAll();
+        };
+
+        okBtn.Click += (_, _) => dialog.DialogResult = true;
+        cancelBtn.Click += (_, _) => dialog.DialogResult = false;
+
+        var result = dialog.ShowDialog();
+        if (result != true) return;
+
+        var newName = textBox.Text?.Trim();
+        if (string.IsNullOrWhiteSpace(newName)) return;
+
+        // Ensure .md extension
+        if (!newName.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+            newName += ".md";
+
+        var newPath = Path.Combine(_markdownFolder, newName);
+
+        // Check if the name actually changed (on case-insensitive filesystems like Windows NTFS,
+        // a case-only change like "file.md" → "FILE.md" requires special handling — see below)
+        bool onlyCaseChanged = string.Equals(newPath, oldPath, StringComparison.OrdinalIgnoreCase);
+        if (onlyCaseChanged && string.Equals(newPath, oldPath, StringComparison.Ordinal))
+            return;
+
+        // Check if target already exists
+        if (File.Exists(newPath))
+        {
+            SetStatus($"Cannot rename: '{newName}' already exists");
+            return;
+        }
+
+        // Validate filename
+        var invalidChars = Path.GetInvalidFileNameChars();
+        if (newName.Any(c => invalidChars.Contains(c)))
+        {
+            SetStatus($"Invalid characters in filename");
+            return;
+        }
+
+        try
+        {
+            if (!onlyCaseChanged)
+            {
+                File.Move(oldPath, newPath);
+            }
+            else
+            {
+                // Case-only rename on case-insensitive filesystem:
+                // Move to a temp name first, then to the desired case.
+                var tempPath = oldPath + ".tmp_rename";
+                File.Move(oldPath, tempPath);
+                File.Move(tempPath, newPath);
+            }
+
+            // Update internal state to use the new path
+            if (_cursorPositions.TryGetValue(oldPath, out var cursorPos))
+            {
+                _cursorPositions[newPath] = cursorPos;
+                _cursorPositions.Remove(oldPath);
+            }
+
+            if (_scrollRatios.TryGetValue(oldPath, out var scrollRatio))
+            {
+                _scrollRatios[newPath] = scrollRatio;
+                _scrollRatios.Remove(oldPath);
+            }
+
+            if (_fileContentCache.TryGetValue(oldPath, out var content))
+            {
+                _fileContentCache[newPath] = content;
+                _fileContentCache.Remove(oldPath);
+            }
+
+            // If this was the current file, update the current path
+            if (string.Equals(_currentFilePath, oldPath, StringComparison.OrdinalIgnoreCase))
+            {
+                _currentFilePath = newPath;
+                Editor.Text = content ?? File.ReadAllText(newPath);
+                UpdateTitle(newPath);
+            }
+
+            // Refresh the file list and select the renamed file
+            RefreshFileList();
+            var newFileName = Path.GetFileName(newPath);
+            if (_fileList.Contains(newFileName))
+            {
+                FileListBox.SelectedItem = newFileName;
+            }
+
+            SetStatus($"Renamed to {newName}");
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Rename failed: {ex.Message}");
         }
     }
 
@@ -1321,9 +1506,10 @@ public partial class MainWindow : Window
             StatusText.Foreground = new SolidColorBrush(Colors.White);
             EditorFontSizeLabel.Foreground = new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88));
             FontSizeText.Foreground = new SolidColorBrush(Colors.White);
-            PreviewFontSizeText.Foreground = new SolidColorBrush(Color.FromRgb(0x90, 0xCA, 0xF9)); // lighter blue on dark bar
+            PreviewFontSizeText.Foreground = new SolidColorBrush(Colors.White);
             CursorPositionText.Foreground = new SolidColorBrush(Colors.White);
             GitHubStatusText.Foreground = new SolidColorBrush(Colors.White);
+            LastSyncText.Foreground = new SolidColorBrush(Colors.White);
 
             // Toolbar
             FolderCombo.Background = new SolidColorBrush(Color.FromRgb(0x3C, 0x3C, 0x3C));
@@ -1381,9 +1567,10 @@ public partial class MainWindow : Window
             StatusText.Foreground = SystemColors.WindowTextBrush;
             EditorFontSizeLabel.Foreground = new SolidColorBrush(Color.FromRgb(0x77, 0x77, 0x77));
             FontSizeText.Foreground = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66));
-            PreviewFontSizeText.Foreground = new SolidColorBrush(Color.FromRgb(0x15, 0x65, 0xC0)); // blue on light bar
+            PreviewFontSizeText.Foreground = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66));
             CursorPositionText.Foreground = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66));
             GitHubStatusText.Foreground = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66));
+            LastSyncText.Foreground = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66));
 
             // Toolbar
             FolderCombo.Background = SystemColors.WindowBrush;
@@ -1408,6 +1595,9 @@ public partial class MainWindow : Window
 
         if (success)
         {
+            _lastSyncTime = DateTime.Now;
+            LastSyncText.Text = $"Last sync: {_lastSyncTime.Value.ToShortTimeString()}";
+
             if (message == "No changes to push.")
             {
                 GitHubStatusText.Text = "\u2601\ufe0f Up to date";
