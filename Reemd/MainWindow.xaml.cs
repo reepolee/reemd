@@ -370,7 +370,12 @@ public partial class MainWindow : Window
             _isDirty = false;
             UpdateSavedIndicator(true);
             ScheduleGitHubSync();
+
+            // Refresh file list to re-sort by last write time — suppress
+            // SelectionChanged so we don't re-load the same file unnecessarily.
+            _isLoadingDocument = true;
             RefreshFileList();
+            _isLoadingDocument = false;
         }
         catch (Exception ex)
         {
