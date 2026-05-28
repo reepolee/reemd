@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
@@ -68,6 +69,8 @@ public partial class MainWindow : Window
     private FileSystemWatcher? _fileWatcher;
     private double _editorFontSize = 13;
     private double _previewFontSize = 14;
+    private const string _virtualHostName = "reemd.local";
+    private static readonly string _virtualBaseUrl = $"http://{_virtualHostName}/";
     private bool _isDarkMode;
     private bool _wordWrapEnabled;
     private string? _pendingPreviewHtml;
@@ -189,6 +192,12 @@ public partial class MainWindow : Window
             }
 
             FolderCombo.Text = _markdownFolder;
+
+            // Update virtual host mapping if WebView2 is already initialized
+            if (Preview.CoreWebView2 != null)
+            {
+                UpdateVirtualHostMapping();
+            }
 
             _fileList.Clear();
             _cursorPositions.Clear();
@@ -497,7 +506,7 @@ public partial class MainWindow : Window
         try
         {
             var size = previewFontSize ?? _previewFontSize;
-            var html = _markdownConverter.ConvertToHtml(markdown, size, _isDarkMode, _markdownFolder);
+            var html = _markdownConverter.ConvertToHtml(markdown, size, _isDarkMode, _virtualBaseUrl);
             _isPreviewReady = false;
 
             if (Preview.CoreWebView2 != null)
@@ -1396,6 +1405,23 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Alt+Up / Alt+Down — move line up/down
+        if ((Keyboard.IsKeyDown(Key.LeftAlt) || Keyboard.IsKeyDown(Key.RightAlt)))
+        {
+            if (e.Key == Key.Up || e.SystemKey == Key.Up)
+            {
+                MoveLineUp();
+                e.Handled = true;
+                return;
+            }
+            if (e.Key == Key.Down || e.SystemKey == Key.Down)
+            {
+                MoveLineDown();
+                e.Handled = true;
+                return;
+            }
+        }
+
         // Ctrl+Tab / Ctrl+Shift+Tab — file navigation (needs non-strict modifier check)
         if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control && e.Key == Key.Tab)
         {
@@ -1542,6 +1568,262 @@ public partial class MainWindow : Window
             FileListBox.SelectedIndex = _fileList.Count - 1; // wrap to last
     }
 
+    #region Drag & Drop
+
+    private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico"
+    };
+
+    /// <summary>
+    /// Shows a copy cursor when dragging image files or text over the editor.
+    /// Handles the event so our Editor_Drop handler can decide how to insert
+    /// (markdown image syntax for image URLs, plain text otherwise).
+    /// </summary>
+    private void Editor_PreviewDragOver(object sender, DragEventArgs e)
+    {
+        bool handled = false;
+
+        // Check for image file drops
+        if (e.Data.GetDataPresent(DataFormats.FileDrop))
+        {
+            var files = e.Data.GetData(DataFormats.FileDrop) as string[];
+            if (files != null && files.Length > 0 &&
+                files.Any(f => ImageExtensions.Contains(Path.GetExtension(f))))
+                handled = true;
+        }
+
+        // Check for any text data (URLs, links, etc.) — try multiple formats
+        // typeof(string) covers in-app drag/drop, UnicodeText/Text covers cross-app (browser) drops
+        // Html covers dragging images from web pages (the URL is embedded in <img> markup)
+        if (!handled && (e.Data.GetDataPresent(typeof(string)) ||
+                          e.Data.GetDataPresent(DataFormats.UnicodeText) ||
+                          e.Data.GetDataPresent(DataFormats.Text) ||
+                          e.Data.GetDataPresent(DataFormats.Html)))
+            handled = true;
+
+        if (!handled) return;
+
+        e.Effects = DragDropEffects.Copy;
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// Extracts a string from drag data, handling both direct strings and MemoryStream
+    /// results from OLE (cross-app) drag sources like browsers.
+    /// </summary>
+    private static string? GetTextFromDragData(IDataObject data, string format)
+    {
+        if (!data.GetDataPresent(format)) return null;
+
+        var raw = data.GetData(format);
+        if (raw == null) return null;
+
+        if (raw is string s)
+            return s;
+
+        if (raw is MemoryStream ms)
+        {
+            // UnicodeText = UTF-16 LE, Text = system default ANSI
+            var encoding = format == DataFormats.UnicodeText
+                ? Encoding.Unicode
+                : Encoding.Default;
+            return encoding.GetString(ms.ToArray()).TrimEnd('\0');
+        }
+
+        // Last resort: try ToString
+        return raw.ToString();
+    }
+
+    /// <summary>
+    /// Parses HTML drag data (e.g. from dragging an image out of a browser) and extracts
+    /// any image source URLs found in &lt;img&gt; tags.
+    /// The HTML format often contains header metadata before the actual fragment.
+    /// </summary>
+    private static List<string> GetImageUrlsFromHtml(IDataObject data)
+    {
+        var urls = new List<string>();
+
+        var raw = GetTextFromDragData(data, DataFormats.Html);
+        if (string.IsNullOrEmpty(raw)) return urls;
+
+        // Strip the CF_HTML header (contains Version, StartHTML, EndHTML, etc.) to get the actual HTML fragment
+        // The fragment starts after <!--StartFragment--> and ends at <!--EndFragment-->
+        var fragmentStart = raw.IndexOf("<!--StartFragment-->", StringComparison.Ordinal);
+        var fragmentEnd = raw.IndexOf("<!--EndFragment-->", StringComparison.Ordinal);
+
+        string html;
+        if (fragmentStart >= 0 && fragmentEnd > fragmentStart)
+        {
+            html = raw.Substring(fragmentStart + "<!--StartFragment-->".Length,
+                                 fragmentEnd - fragmentStart - "<!--StartFragment-->".Length);
+        }
+        else
+        {
+            html = raw;
+        }
+
+        // Find all <img src="..."> or <img src='...'>
+        int idx = 0;
+        while ((idx = html.IndexOf("<img", idx, StringComparison.OrdinalIgnoreCase)) >= 0)
+        {
+            var srcEnd = html.IndexOf(">", idx, StringComparison.OrdinalIgnoreCase);
+            if (srcEnd < 0) break;
+
+            var tag = html.Substring(idx, srcEnd - idx + 1);
+
+            // Match src="..." or src='...'
+            var srcMatch = System.Text.RegularExpressions.Regex.Match(tag,
+                @"src\s*=\s*[""']([^""']+)[""']",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+            if (srcMatch.Success)
+            {
+                var src = srcMatch.Groups[1].Value;
+                if (!string.IsNullOrWhiteSpace(src) && IsImageUrl(src))
+                    urls.Add(src);
+            }
+
+            idx = srcEnd + 1;
+        }
+
+        return urls;
+    }
+
+    /// <summary>
+    /// Handles dropping image URLs or image files onto the editor.
+    /// Inserts markdown image syntax ![alt](url) at the drop position.
+    /// </summary>
+    private void Editor_Drop(object sender, DragEventArgs e)
+    {
+        var dropIndex = Editor.GetCharacterIndexFromPoint(e.GetPosition(Editor), true);
+        if (dropIndex < 0) dropIndex = Editor.Text.Length;
+
+        // First, try to extract any text from the drag data (URLs, etc.)
+        // Do this BEFORE checking FileDrop so we can determine if it's an image URL
+        string? text = GetTextFromDragData(e.Data, typeof(string).FullName!)
+                    ?? GetTextFromDragData(e.Data, DataFormats.UnicodeText)
+                    ?? GetTextFromDragData(e.Data, DataFormats.Text);
+
+        // Handle file drops
+        if (e.Data.GetDataPresent(DataFormats.FileDrop))
+        {
+            var files = e.Data.GetData(DataFormats.FileDrop) as string[];
+
+            if (files != null && files.Length > 0)
+            {
+                var imageFiles = files.Where(f => ImageExtensions.Contains(Path.GetExtension(f))).ToList();
+
+                if (imageFiles.Count > 0)
+                {
+                    // Insert each image as markdown (file copy path)
+                    var lines = new List<string>();
+                    foreach (var file in imageFiles)
+                    {
+                        var fileName = Path.GetFileName(file);
+                        var destPath = Path.Combine(_markdownFolder, fileName);
+
+                        string imagePath;
+                        if (string.Equals(file, destPath, StringComparison.OrdinalIgnoreCase))
+                        {
+                            imagePath = MakeRelativePath(_markdownFolder, file).Replace('\\', '/');
+                        }
+                        else
+                        {
+                            if (!File.Exists(destPath))
+                            {
+                                try { File.Copy(file, destPath); } catch { }
+                            }
+                            imagePath = fileName;
+                        }
+
+                        lines.Add($"![{Path.GetFileNameWithoutExtension(fileName)}]({imagePath})");
+                    }
+
+                    var insertion = string.Join("\n", lines) + "\n";
+                    Editor.Text = Editor.Text.Insert(dropIndex, insertion);
+                    Editor.CaretIndex = dropIndex + insertion.Length;
+                    SetStatus($"Inserted {imageFiles.Count} image(s)");
+                    e.Handled = true;
+                    return;
+                }
+
+                // FileDrop present but no image files — fall through to text handling below
+            }
+        }
+
+        // Handle text/URL drops (also reached from FileDrop with no image files)
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            text = text.Trim();
+
+            if (IsImageUrl(text))
+            {
+                var markdown = $"![Image]({text})";
+                Editor.Text = Editor.Text.Insert(dropIndex, markdown);
+                Editor.CaretIndex = dropIndex + markdown.Length;
+                SetStatus("Inserted image from URL");
+                e.Handled = true;
+                return;
+            }
+
+            // Not an image URL — check if browser provided the URL via HTML format
+            // (dragging an image from a web page often puts the URL only in DataFormats.Html)
+            var htmlImageUrls = GetImageUrlsFromHtml(e.Data);
+            if (htmlImageUrls.Count > 0)
+            {
+                var insertion = string.Join("\n", htmlImageUrls.Select(u => $"![Image]({u})"));
+                Editor.Text = Editor.Text.Insert(dropIndex, insertion);
+                Editor.CaretIndex = dropIndex + insertion.Length;
+                SetStatus($"Inserted {htmlImageUrls.Count} image(s) from HTML");
+                e.Handled = true;
+                return;
+            }
+
+            // Non-image text — insert as plain text at drop position
+            Editor.Text = Editor.Text.Insert(dropIndex, text);
+            Editor.CaretIndex = dropIndex + text.Length;
+            SetStatus("Dropped text");
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>
+    /// Checks whether a URL (or plain text) looks like an image URL based on file extension.
+    /// Strips query parameters before checking the extension.
+    /// </summary>
+    private static bool IsImageUrl(string text)
+    {
+        text = text.Trim().Trim('"', '\'');
+
+        // Strip query string and fragment for extension check
+        var cleanPath = text.Split('?')[0].Split('#')[0];
+
+        // Must look like a URL or path
+        if (!text.StartsWith("http://") && !text.StartsWith("https://") &&
+            !text.StartsWith("ftp://") && !Path.HasExtension(cleanPath))
+            return false;
+
+        var ext = Path.GetExtension(cleanPath);
+        return !string.IsNullOrEmpty(ext) && ImageExtensions.Contains(ext);
+    }
+
+    /// <summary>
+    /// Creates a relative path from base path to target path.
+    /// </summary>
+    private static string MakeRelativePath(string basePath, string targetPath)
+    {
+        if (!basePath.EndsWith(Path.DirectorySeparatorChar.ToString()))
+            basePath += Path.DirectorySeparatorChar;
+
+        var baseUri = new Uri(basePath);
+        var targetUri = new Uri(targetPath);
+        var relative = baseUri.MakeRelativeUri(targetUri).ToString();
+        return Uri.UnescapeDataString(relative);
+    }
+
+    #endregion
+
     #region Context Menu Handlers
 
     private void ContextMenu_Bold_Click(object sender, RoutedEventArgs e)
@@ -1570,6 +1852,97 @@ public partial class MainWindow : Window
     }
 
     #endregion
+
+    /// <summary>
+    /// Moves the current line (or selected lines) up one line.
+    /// Catches caret at the first line (cannot move up from there).
+    /// </summary>
+    private void MoveLineUp()
+    {
+        int caretPos = Editor.CaretIndex;
+        int lineIdx = Editor.GetLineIndexFromCharacterIndex(caretPos);
+
+        if (lineIdx <= 0) return;
+
+        string text = Editor.Text;
+
+        int curContentStart = Editor.GetCharacterIndexFromLineIndex(lineIdx);
+        int curContentLen = Editor.GetLineLength(lineIdx);
+        int prevContentStart = Editor.GetCharacterIndexFromLineIndex(lineIdx - 1);
+        int prevContentLen = Editor.GetLineLength(lineIdx - 1);
+
+        // Separator after previous line
+        int prevSepStart = prevContentStart + prevContentLen;
+        int prevSepLen = curContentStart - prevSepStart;
+
+        // Separator after current line
+        int curSepStart = curContentStart + curContentLen;
+        int curSepLen;
+        if (lineIdx + 1 < Editor.LineCount)
+            curSepLen = Editor.GetCharacterIndexFromLineIndex(lineIdx + 1) - curSepStart;
+        else
+            curSepLen = 0;
+
+        string before = text.Substring(0, prevContentStart);
+        string prevContent = text.Substring(prevContentStart, prevContentLen);
+        string prevSep = text.Substring(prevSepStart, prevSepLen);
+        string curContent = text.Substring(curContentStart, curContentLen);
+        string curSep = text.Substring(curSepStart, curSepLen);
+        string after = text.Substring(curSepStart + curSepLen);
+
+        // Swap: cur content goes to prev position, prev content moves down
+        Editor.Text = before + curContent + prevSep + prevContent + curSep + after;
+
+        // Place cursor at same relative position in the moved line (now one line up)
+        int relativeOffset = caretPos - curContentStart;
+        Editor.CaretIndex = prevContentStart + relativeOffset;
+    }
+
+    /// <summary>
+    /// Moves the current line (or selected lines) down one line.
+    /// Catches caret at the last line (cannot move down from there).
+    /// </summary>
+    private void MoveLineDown()
+    {
+        int caretPos = Editor.CaretIndex;
+        int lineIdx = Editor.GetLineIndexFromCharacterIndex(caretPos);
+        int totalLines = Editor.LineCount;
+
+        if (lineIdx >= totalLines - 1) return;
+
+        string text = Editor.Text;
+
+        int curContentStart = Editor.GetCharacterIndexFromLineIndex(lineIdx);
+        int curContentLen = Editor.GetLineLength(lineIdx);
+        int nextContentStart = Editor.GetCharacterIndexFromLineIndex(lineIdx + 1);
+        int nextContentLen = Editor.GetLineLength(lineIdx + 1);
+
+        // Separator after current line
+        int curSepStart = curContentStart + curContentLen;
+        int curSepLen = nextContentStart - curSepStart;
+
+        // Separator after next line
+        int nextSepStart = nextContentStart + nextContentLen;
+        int nextSepLen;
+        if (lineIdx + 2 < totalLines)
+            nextSepLen = Editor.GetCharacterIndexFromLineIndex(lineIdx + 2) - nextSepStart;
+        else
+            nextSepLen = 0;
+
+        string before = text.Substring(0, curContentStart);
+        string curContent = text.Substring(curContentStart, curContentLen);
+        string curSep = text.Substring(curSepStart, curSepLen);
+        string nextContent = text.Substring(nextContentStart, nextContentLen);
+        string nextSep = text.Substring(nextSepStart, nextSepLen);
+        string after = text.Substring(nextSepStart + nextSepLen);
+
+        // Swap: next content goes to cur position, cur content moves down
+        Editor.Text = before + nextContent + curSep + curContent + nextSep + after;
+
+        // Place cursor at same relative position in the moved line (now one line down)
+        int relativeOffset = caretPos - curContentStart;
+        Editor.CaretIndex = curContentStart + curSep.Length + nextContent.Length + relativeOffset;
+    }
 
     /// <summary>
     /// Wraps the current selection with the given delimiter (e.g. ** for bold, * for italic).
@@ -1949,6 +2322,7 @@ public partial class MainWindow : Window
             Preview.CoreWebView2.Settings.IsZoomControlEnabled = false;
 
             Preview.CoreWebView2.WebMessageReceived += OnPreviewWebMessageReceived;
+            UpdateVirtualHostMapping();
 
             // If there's pending HTML from before initialization, render it now
             if (_pendingPreviewHtml != null)
@@ -2135,6 +2509,33 @@ public partial class MainWindow : Window
                 LoadMarkdownFolder(text);
             }
             Keyboard.ClearFocus();
+        }
+    }
+
+    #endregion
+
+    #region Virtual Host Mapping
+
+    /// <summary>
+    /// Maps a virtual hostname (reemd.local) to the current markdown folder so that
+    /// WebView2 can resolve relative local image paths via <base href="http://reemd.local/">.
+    /// Without this, local images won't load because NavigateToString uses a data: origin
+    /// which blocks file:// access by default.
+    /// </summary>
+    private void UpdateVirtualHostMapping()
+    {
+        if (Preview.CoreWebView2 == null) return;
+
+        try
+        {
+            Preview.CoreWebView2.SetVirtualHostNameToFolderMapping(
+                _virtualHostName,
+                _markdownFolder,
+                CoreWebView2HostResourceAccessKind.Allow);
+        }
+        catch
+        {
+            // Best-effort — if the mapping can't be set, images won't load
         }
     }
 

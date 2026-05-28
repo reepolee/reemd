@@ -243,7 +243,9 @@
                                      HorizontalScrollBarVisibility="Auto"
                                      TextChanged="Editor_TextChanged"
                                      SelectionChanged="Editor_SelectionChanged"
-                                     PreviewKeyDown="Editor_PreviewKeyDown">
+                                     PreviewKeyDown="Editor_PreviewKeyDown"
+                                     Drop="Editor_Drop"
+                                     PreviewDragOver="Editor_PreviewDragOver">
                             <TextBox.ContextMenu>
                                 <ContextMenu>
                                     <MenuItem Command="ApplicationCommands.Cut" />
