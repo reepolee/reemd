@@ -70,6 +70,7 @@ public partial class MainWindow : Window
     private bool _isDarkMode;
     private bool _wordWrapEnabled;
     private string? _pendingPreviewHtml;
+    private bool IsEditorFocused => Keyboard.FocusedElement == Editor;
     private string? _pendingLastFile;
     private readonly Dictionary<string, CursorPosition> _loadedCursorPositions = [];
 
@@ -869,36 +870,57 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Fires before the event tunnels to the focused/under-mouse control.
-    /// Handles Ctrl+Shift+Scroll anywhere (even over WebView2) for preview font size,
-    /// and Ctrl+Scroll over the editor for editor font size.
+    /// Ctrl+Scroll over a panel = that panel's font (position-based).
+    /// Ctrl+Shift+Scroll = opposite panel's font.
     /// </summary>
     private void Window_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        // Ctrl+Shift+Scroll → preview font size (works anywhere, even over WebView2)
+        // Ctrl+Shift+Scroll → force the OPPOSITE panel's font
         if (Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
         {
-            _previewFontSize = e.Delta > 0
-                ? Math.Min(_previewFontSize + 1, 48)
-                : Math.Max(_previewFontSize - 1, 8);
-            ApplyPreviewFontSize();
-            SaveSettings();
-            e.Handled = true;
-            return;
-        }
-
-        // Ctrl+Scroll → editor font size (only when over the editor)
-        if (Keyboard.Modifiers == ModifierKeys.Control)
-        {
-            // Check if mouse is over the editor
-            var pos = Mouse.GetPosition(Editor);
-            if (pos.X >= 0 && pos.Y >= 0 && pos.X < Editor.ActualWidth && pos.Y < Editor.ActualHeight)
+            if (IsEditorFocused)
+            {
+                _previewFontSize = e.Delta > 0
+                    ? Math.Min(_previewFontSize + 1, 48)
+                    : Math.Max(_previewFontSize - 1, 8);
+                ApplyPreviewFontSize();
+                SaveSettings();
+            }
+            else
             {
                 _editorFontSize = e.Delta > 0
                     ? Math.Min(_editorFontSize + 1, 48)
                     : Math.Max(_editorFontSize - 1, 8);
                 ApplyEditorFontSize();
-                e.Handled = true;
             }
+            e.Handled = true;
+            return;
+        }
+
+        // Ctrl+Scroll → context-sensitive by mouse position
+        if (Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            var pos = Mouse.GetPosition(Editor);
+            bool overEditor = pos.X >= 0 && pos.Y >= 0 && pos.X < Editor.ActualWidth && pos.Y < Editor.ActualHeight;
+
+            if (overEditor)
+            {
+                // Over editor → change editor font
+                _editorFontSize = e.Delta > 0
+                    ? Math.Min(_editorFontSize + 1, 48)
+                    : Math.Max(_editorFontSize - 1, 8);
+                ApplyEditorFontSize();
+            }
+            else
+            {
+                // Over preview (or anywhere else) → change preview font
+                _previewFontSize = e.Delta > 0
+                    ? Math.Min(_previewFontSize + 1, 48)
+                    : Math.Max(_previewFontSize - 1, 8);
+                ApplyPreviewFontSize();
+                SaveSettings();
+            }
+            e.Handled = true;
         }
     }
 
@@ -919,7 +941,60 @@ public partial class MainWindow : Window
             return;
         }
 
-        // Ctrl+Shift+Plus/Minus/0 — preview font size (works even if WebView2 has focus)
+        // Ctrl+Plus/Minus/0 (no Shift) — context-sensitive: font of the active panel
+        if (Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            switch (e.Key)
+            {
+                case Key.OemPlus:
+                case Key.Add:
+                    if (IsEditorFocused)
+                    {
+                        _editorFontSize = Math.Min(_editorFontSize + 1, 48);
+                        ApplyEditorFontSize();
+                    }
+                    else
+                    {
+                        _previewFontSize = Math.Min(_previewFontSize + 1, 48);
+                        ApplyPreviewFontSize();
+                        SaveSettings();
+                    }
+                    e.Handled = true;
+                    return;
+                case Key.OemMinus:
+                case Key.Subtract:
+                    if (IsEditorFocused)
+                    {
+                        _editorFontSize = Math.Max(_editorFontSize - 1, 8);
+                        ApplyEditorFontSize();
+                    }
+                    else
+                    {
+                        _previewFontSize = Math.Max(_previewFontSize - 1, 8);
+                        ApplyPreviewFontSize();
+                        SaveSettings();
+                    }
+                    e.Handled = true;
+                    return;
+                case Key.D0:
+                case Key.NumPad0:
+                    if (IsEditorFocused)
+                    {
+                        _editorFontSize = 13;
+                        ApplyEditorFontSize();
+                    }
+                    else
+                    {
+                        _previewFontSize = 14;
+                        ApplyPreviewFontSize();
+                        SaveSettings();
+                    }
+                    e.Handled = true;
+                    return;
+            }
+        }
+
+        // Ctrl+Shift+Plus/Minus/0 — forces the OPPOSITE panel's font
         if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control &&
             (Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift)
         {
@@ -927,23 +1002,47 @@ public partial class MainWindow : Window
             {
                 case Key.OemPlus:
                 case Key.Add:
-                    _previewFontSize = Math.Min(_previewFontSize + 1, 48);
-                    ApplyPreviewFontSize();
-                    SaveSettings();
+                    if (IsEditorFocused)
+                    {
+                        _previewFontSize = Math.Min(_previewFontSize + 1, 48);
+                        ApplyPreviewFontSize();
+                        SaveSettings();
+                    }
+                    else
+                    {
+                        _editorFontSize = Math.Min(_editorFontSize + 1, 48);
+                        ApplyEditorFontSize();
+                    }
                     e.Handled = true;
                     return;
                 case Key.OemMinus:
                 case Key.Subtract:
-                    _previewFontSize = Math.Max(_previewFontSize - 1, 8);
-                    ApplyPreviewFontSize();
-                    SaveSettings();
+                    if (IsEditorFocused)
+                    {
+                        _previewFontSize = Math.Max(_previewFontSize - 1, 8);
+                        ApplyPreviewFontSize();
+                        SaveSettings();
+                    }
+                    else
+                    {
+                        _editorFontSize = Math.Max(_editorFontSize - 1, 8);
+                        ApplyEditorFontSize();
+                    }
                     e.Handled = true;
                     return;
                 case Key.D0:
                 case Key.NumPad0:
-                    _previewFontSize = 14;
-                    ApplyPreviewFontSize();
-                    SaveSettings();
+                    if (IsEditorFocused)
+                    {
+                        _previewFontSize = 14;
+                        ApplyPreviewFontSize();
+                        SaveSettings();
+                    }
+                    else
+                    {
+                        _editorFontSize = 13;
+                        ApplyEditorFontSize();
+                    }
                     e.Handled = true;
                     return;
             }
@@ -986,31 +1085,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        // Ctrl+Plus/Minus/0 (without Shift) — editor font size (handled when editor has focus)
-        if (Keyboard.Modifiers == ModifierKeys.Control)
-        {
-            switch (e.Key)
-            {
-                case Key.OemPlus:
-                case Key.Add:
-                    _editorFontSize = Math.Min(_editorFontSize + 1, 48);
-                    ApplyEditorFontSize();
-                    e.Handled = true;
-                    return;
-                case Key.OemMinus:
-                case Key.Subtract:
-                    _editorFontSize = Math.Max(_editorFontSize - 1, 8);
-                    ApplyEditorFontSize();
-                    e.Handled = true;
-                    return;
-                case Key.D0:
-                case Key.NumPad0:
-                    _editorFontSize = 13;
-                    ApplyEditorFontSize();
-                    e.Handled = true;
-                    return;
-            }
-        }
+        // Ctrl+Plus/Minus/0 is handled at Window level (MainWindow_PreviewKeyDown)
+        // for context-sensitive behavior. Only other Ctrl-based shortcuts remain here.
 
         // Markdown formatting and editor shortcuts (exact Ctrl only, no other modifiers)
         bool ctrl = Keyboard.Modifiers == ModifierKeys.Control;
