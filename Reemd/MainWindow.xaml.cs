@@ -27,7 +27,8 @@ public partial class MainWindow : Window
     private readonly MarkdownConverter _markdownConverter = new();
     private readonly GitHubService _gitHubService = new();
 
-    private readonly ObservableCollection<string> _fileList = [];
+    private readonly HashSet<string> _pinnedFilenames = [];
+    private readonly ObservableCollection<FileEntry> _fileList = [];
     private readonly Dictionary<string, CursorPosition> _cursorPositions = [];
     private readonly Dictionary<string, string> _fileContentCache = [];
     private string _markdownFolder = ".";
@@ -120,9 +121,14 @@ public partial class MainWindow : Window
         _loadedCursorPositions.Clear();
 
         // Re-select the last file from settings (stored by LoadSettings)
-        if (_pendingLastFile != null && _fileList.Contains(Path.GetFileName(_pendingLastFile)))
+        if (_pendingLastFile != null)
         {
-            FileListBox.SelectedItem = Path.GetFileName(_pendingLastFile);
+            var pendingName = Path.GetFileName(_pendingLastFile);
+            var match = _fileList.FirstOrDefault(f => f.Name == pendingName);
+            if (match != null)
+            {
+                FileListBox.SelectedItem = match;
+            }
             _pendingLastFile = null;
         }
 
@@ -195,13 +201,22 @@ public partial class MainWindow : Window
             UpdatePreview(string.Empty);
             UpdateSavedIndicator(true);
 
+            // Load pinned filenames from .pinned file (hidden system file)
+            LoadPinnedFilenames();
+
             var files = Directory.GetFiles(_markdownFolder, MarkdownFilter)
-                .OrderByDescending(f => File.GetLastWriteTime(f))
+                .OrderByDescending(f => _pinnedFilenames.Contains(Path.GetFileName(f)) ? 1 : 0)
+                .ThenByDescending(f => File.GetLastWriteTime(f))
                 .ToList();
 
             foreach (var file in files)
             {
-                _fileList.Add(Path.GetFileName(file));
+                var fileName = Path.GetFileName(file);
+                _fileList.Add(new FileEntry
+                {
+                    Name = fileName,
+                    IsPinned = _pinnedFilenames.Contains(fileName)
+                });
                 _cursorPositions[file] = new CursorPosition(0, 0, 0);
             }
 
@@ -233,8 +248,9 @@ public partial class MainWindow : Window
                 EnableRaisingEvents = true
             };
 
-            _fileWatcher.Created += FileSystemWatcher_Changed;
-            _fileWatcher.Deleted += FileSystemWatcher_Changed;
+            _fileWatcher.Created += FileSystemWatcher_FileCreatedOrDeleted;
+            _fileWatcher.Deleted += FileSystemWatcher_FileCreatedOrDeleted;
+            _fileWatcher.Changed += FileWatcher_FileChanged;
             _fileWatcher.Renamed += FileSystemWatcher_Renamed;
         }
         catch
@@ -242,9 +258,36 @@ public partial class MainWindow : Window
         }
     }
 
-    private void FileSystemWatcher_Changed(object sender, FileSystemEventArgs e)
+    private void FileSystemWatcher_FileCreatedOrDeleted(object sender, FileSystemEventArgs e)
     {
         Dispatcher.Invoke(() => RefreshFileList());
+    }
+
+    /// <summary>
+    /// Fired when a markdown file is modified externally (by another app or tool).
+    /// Refreshes the file list and reloads the current file if it was changed externally
+    /// and we have no unsaved changes. Skips if the content matches our cache,
+    /// which means it was our own save (no Undo history loss).
+    /// </summary>
+    private void FileWatcher_FileChanged(object sender, FileSystemEventArgs e)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            RefreshFileList();
+
+            if (_currentFilePath != null &&
+                !_isDirty &&
+                string.Equals(e.FullPath, _currentFilePath, StringComparison.OrdinalIgnoreCase))
+            {
+                // Content matches cache = our own save; skip reload to preserve Undo history.
+                if (_fileContentCache.TryGetValue(e.FullPath, out var cached) &&
+                    cached == File.ReadAllText(e.FullPath))
+                    return;
+
+                SetStatus($"Reloaded: {Path.GetFileName(_currentFilePath)} (externally modified)");
+                LoadFile(_currentFilePath);
+            }
+        });
     }
 
     private void FileSystemWatcher_Renamed(object sender, RenamedEventArgs e)
@@ -256,28 +299,35 @@ public partial class MainWindow : Window
     {
         try
         {
-            var currentSelection = FileListBox.SelectedItem as string;
+            var currentSelection = (FileListBox.SelectedItem as FileEntry)?.Name;
 
             // Fully rebuild the file list sorted by last write time (most recent first).
             // This ensures that after saving, the saved file jumps to the top.
             var orderedFiles = Directory.GetFiles(_markdownFolder, MarkdownFilter)
-                .OrderByDescending(f => File.GetLastWriteTime(f))
+                .OrderByDescending(f => _pinnedFilenames.Contains(Path.GetFileName(f)) ? 1 : 0)
+                .ThenByDescending(f => File.GetLastWriteTime(f))
                 .ToList();
 
             _fileList.Clear();
             foreach (var file in orderedFiles)
             {
                 var fileName = Path.GetFileName(file);
-                _fileList.Add(fileName);
+                _fileList.Add(new FileEntry
+                {
+                    Name = fileName,
+                    IsPinned = _pinnedFilenames.Contains(fileName)
+                });
                 if (!_cursorPositions.ContainsKey(file))
                     _cursorPositions[file] = new CursorPosition(0, 0, 0);
             }
 
             UpdateFileCount();
 
-            if (currentSelection != null && _fileList.Contains(currentSelection))
+            if (currentSelection != null)
             {
-                FileListBox.SelectedItem = currentSelection;
+                var match = _fileList.FirstOrDefault(f => f.Name == currentSelection);
+                if (match != null)
+                    FileListBox.SelectedItem = match;
             }
         }
         catch
@@ -289,6 +339,48 @@ public partial class MainWindow : Window
     {
         FileCountText.Text = _fileList.Count.ToString();
         FileCountStatus.Text = $"{_fileList.Count} file(s)";
+    }
+
+    /// <summary>
+    /// Loads pinned filenames from the .pinned file in the markdown folder.
+    /// Each line is a filename to pin to the top of the list.
+    /// </summary>
+    private void LoadPinnedFilenames()
+    {
+        _pinnedFilenames.Clear();
+        try
+        {
+            var pinnedPath = Path.Combine(_markdownFolder, ".pinned");
+            if (!File.Exists(pinnedPath)) return;
+
+            var lines = File.ReadAllLines(pinnedPath);
+            foreach (var line in lines)
+            {
+                var name = line.Trim();
+                if (!string.IsNullOrWhiteSpace(name))
+                    _pinnedFilenames.Add(name);
+            }
+        }
+        catch
+        {
+            // Best-effort — if .pinned can't be read, no pins
+        }
+    }
+
+    /// <summary>
+    /// Saves the current pinned filenames to the .pinned file in the markdown folder.
+    /// </summary>
+    private void SavePinnedFilenames()
+    {
+        try
+        {
+            var pinnedPath = Path.Combine(_markdownFolder, ".pinned");
+            File.WriteAllLines(pinnedPath, _pinnedFilenames);
+        }
+        catch
+        {
+            // Best-effort
+        }
     }
 
     #endregion
@@ -443,7 +535,6 @@ public partial class MainWindow : Window
 
     private void ShowCombinedFontSizes()
     {
-        EditorFontSizeLabel.Text = $"{_editorFontSize}px";
         FontSizeText.Text = $"Editor: {_editorFontSize}px";
         PreviewFontSizeText.Text = $"Preview: {_previewFontSize}px";
     }
@@ -789,21 +880,70 @@ public partial class MainWindow : Window
     {
         if (_isLoadingDocument) return;
 
-        var selectedFile = FileListBox.SelectedItem as string;
-        if (selectedFile == null) return;
+        var selectedEntry = FileListBox.SelectedItem as FileEntry;
+        if (selectedEntry == null) return;
 
         _ = AutoSaveCurrentFileAsync();
 
-        var fullPath = Path.Combine(_markdownFolder, selectedFile);
+        var fullPath = Path.Combine(_markdownFolder, selectedEntry.Name);
         LoadFile(fullPath);
+    }
+
+    /// <summary>
+    /// Toggles the pin state of a file. Pinned files appear at the top of the list.
+    /// </summary>
+    private void PinToggle_Click(object sender, RoutedEventArgs e)
+    {
+        var button = sender as Button;
+        var entry = button?.DataContext as FileEntry;
+        if (entry == null) return;
+
+        // Toggle pin state
+        entry.IsPinned = !entry.IsPinned;
+
+        if (entry.IsPinned)
+            _pinnedFilenames.Add(entry.Name);
+        else
+            _pinnedFilenames.Remove(entry.Name);
+
+        SavePinnedFilenames();
+
+        // Re-sort the list so pinned files appear at the top
+        var currentSelection = (FileListBox.SelectedItem as FileEntry)?.Name;
+
+        var sorted = _fileList
+            .OrderByDescending(f => f.IsPinned ? 1 : 0)
+            .ThenByDescending(f =>
+            {
+                var fullPath = Path.Combine(_markdownFolder, f.Name);
+                try { return File.GetLastWriteTime(fullPath); }
+                catch { return DateTime.MinValue; }
+            })
+            .ToList();
+
+        _fileList.Clear();
+        foreach (var item in sorted)
+            _fileList.Add(item);
+
+        // Re-select
+        if (currentSelection != null)
+        {
+            var match = _fileList.FirstOrDefault(f => f.Name == currentSelection);
+            if (match != null)
+                FileListBox.SelectedItem = match;
+        }
+
+        SetStatus(entry.IsPinned
+            ? $"Pinned: {entry.Name}"
+            : $"Unpinned: {entry.Name}");
     }
 
     private void FileListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        var selectedFile = FileListBox.SelectedItem as string;
-        if (selectedFile == null) return;
+        var selectedEntry = FileListBox.SelectedItem as FileEntry;
+        if (selectedEntry == null) return;
 
-        var fullPath = Path.Combine(_markdownFolder, selectedFile);
+        var fullPath = Path.Combine(_markdownFolder, selectedEntry.Name);
         try
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
@@ -822,10 +962,10 @@ public partial class MainWindow : Window
         // F2 — rename selected file
         if (e.Key == Key.F2)
         {
-            var selectedFile = FileListBox.SelectedItem as string;
-            if (selectedFile == null) return;
+            var selectedEntry = FileListBox.SelectedItem as FileEntry;
+            if (selectedEntry == null) return;
 
-            RenameFile(selectedFile);
+            RenameFile(selectedEntry.Name);
             e.Handled = true;
         }
     }
@@ -989,12 +1129,16 @@ public partial class MainWindow : Window
                 UpdateTitle(newPath);
             }
 
+            // Update last write time so the file jumps to the top of the sorted list
+            File.SetLastWriteTime(newPath, DateTime.Now);
+
             // Refresh the file list and select the renamed file
             RefreshFileList();
             var newFileName = Path.GetFileName(newPath);
-            if (_fileList.Contains(newFileName))
+            var match = _fileList.FirstOrDefault(f => f.Name == newFileName);
+            if (match != null)
             {
-                FileListBox.SelectedItem = newFileName;
+                FileListBox.SelectedItem = match;
             }
 
             SetStatus($"Renamed to {newName}");
@@ -1264,6 +1408,26 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Ctrl+Shift+C — insert code block (```)
+        if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control &&
+            (Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift &&
+            e.Key == Key.C)
+        {
+            InsertCodeBlock();
+            e.Handled = true;
+            return;
+        }
+
+        // Ctrl+Shift+I — inline code (`)
+        if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control &&
+            (Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift &&
+            e.Key == Key.I)
+        {
+            InsertMarkdownWrapper("`");
+            e.Handled = true;
+            return;
+        }
+
         // F3 / Shift+F3 — find next/previous (no Ctrl needed)
         if (e.Key == Key.F3)
         {
@@ -1348,7 +1512,9 @@ public partial class MainWindow : Window
             File.WriteAllText(fullPath, "");
 
             RefreshFileList();
-            FileListBox.SelectedItem = fileName;
+            var createdMatch = _fileList.FirstOrDefault(f => f.Name == fileName);
+            if (createdMatch != null)
+                FileListBox.SelectedItem = createdMatch;
             Editor.Focus();
             SetStatus($"Created {fileName}");
         }
@@ -1376,6 +1542,35 @@ public partial class MainWindow : Window
             FileListBox.SelectedIndex = _fileList.Count - 1; // wrap to last
     }
 
+    #region Context Menu Handlers
+
+    private void ContextMenu_Bold_Click(object sender, RoutedEventArgs e)
+    {
+        InsertMarkdownWrapper("**");
+    }
+
+    private void ContextMenu_Italic_Click(object sender, RoutedEventArgs e)
+    {
+        InsertMarkdownWrapper("*");
+    }
+
+    private void ContextMenu_InlineCode_Click(object sender, RoutedEventArgs e)
+    {
+        InsertMarkdownWrapper("`");
+    }
+
+    private void ContextMenu_CodeBlock_Click(object sender, RoutedEventArgs e)
+    {
+        InsertCodeBlock();
+    }
+
+    private void ContextMenu_Link_Click(object sender, RoutedEventArgs e)
+    {
+        InsertLinkMarkdown();
+    }
+
+    #endregion
+
     /// <summary>
     /// Wraps the current selection with the given delimiter (e.g. ** for bold, * for italic).
     /// </summary>
@@ -1399,6 +1594,35 @@ public partial class MainWindow : Window
             Editor.Text = Editor.Text.Insert(selStart, placeholder);
             Editor.SelectionStart = selStart + delimiter.Length;
             Editor.SelectionLength = 4; // select "text"
+        }
+
+        Editor.Focus();
+    }
+
+    /// <summary>
+    /// Wraps the selection in a markdown code block (```).
+    /// With selection: wraps selected text in ```\n...\n```.
+    /// Without selection: inserts a placeholder code block and selects "code".
+    /// </summary>
+    private void InsertCodeBlock()
+    {
+        var selStart = Editor.SelectionStart;
+        var selLen = Editor.SelectionLength;
+
+        if (selLen > 0)
+        {
+            var selected = Editor.Text.Substring(selStart, selLen);
+            var replacement = $"```\n{selected}\n```";
+            Editor.Text = Editor.Text.Remove(selStart, selLen).Insert(selStart, replacement);
+            Editor.SelectionStart = selStart;
+            Editor.SelectionLength = replacement.Length;
+        }
+        else
+        {
+            var replacement = "```\ncode\n```";
+            Editor.Text = Editor.Text.Insert(selStart, replacement);
+            Editor.SelectionStart = selStart + 4;
+            Editor.SelectionLength = 4;
         }
 
         Editor.Focus();
@@ -1459,6 +1683,23 @@ public partial class MainWindow : Window
         SetStatus(_isDarkMode ? "Dark theme" : "Light theme");
     }
 
+    /// <summary>
+    /// Creates an ItemContainerStyle for the file list that styles the pin button
+    /// to match the current theme — just sets cursor to hand.
+    /// Foreground is NOT set so the 📌 emoji renders in its natural color.
+    /// </summary>
+    private static Style CreatePinButtonStyle()
+    {
+        var style = new Style(typeof(ListBoxItem));
+
+        var btnStyle = new Style(typeof(Button));
+        btnStyle.Setters.Add(new Setter(Control.CursorProperty, Cursors.Hand));
+
+        style.Resources.Add(typeof(Button), btnStyle);
+
+        return style;
+    }
+
     private void ApplyTheme()
     {
         if (_isDarkMode)
@@ -1472,7 +1713,7 @@ public partial class MainWindow : Window
             FileListHeader.Background = new SolidColorBrush(Color.FromRgb(0x2D, 0x2D, 0x2D));
             FileCountText.Foreground = new SolidColorBrush(Color.FromRgb(0xAA, 0xAA, 0xAA));
             FileListBox.Background = new SolidColorBrush(Color.FromRgb(0x25, 0x25, 0x26));
-            FileListBox.Foreground = new SolidColorBrush(Color.FromRgb(0xCC, 0xCC, 0xCC));
+            FileListBox.Foreground = new SolidColorBrush(Color.FromRgb(0xCC, 0xCC, 0xCC));                            FileListBox.ItemContainerStyle = CreatePinButtonStyle();
             FileCountStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x99, 0x99, 0x99));
             SidebarFooter.Background = new SolidColorBrush(Color.FromRgb(0x2D, 0x2D, 0x2D));
 
@@ -1503,13 +1744,10 @@ public partial class MainWindow : Window
             ReplaceBar.BorderBrush = new SolidColorBrush(Color.FromRgb(0x3C, 0x3C, 0x3C));
             ReplaceTextBox.Background = new SolidColorBrush(Color.FromRgb(0x3C, 0x3C, 0x3C));
             ReplaceTextBox.Foreground = new SolidColorBrush(Color.FromRgb(0xD4, 0xD4, 0xD4));
-            ReplaceTextBox.BorderBrush = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55));
-
-            // Status bar
-            AppStatusBar.Background = new SolidColorBrush(Color.FromRgb(0x00, 0x7A, 0xCC));
-            AppStatusBar.BorderBrush = new SolidColorBrush(Color.FromRgb(0x00, 0x7A, 0xCC));
+            ReplaceTextBox.BorderBrush = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55));            // Status bar
+            AppStatusBar.Background = new SolidColorBrush(Color.FromRgb(0x2D, 0x2D, 0x2D));
+            AppStatusBar.BorderBrush = new SolidColorBrush(Color.FromRgb(0x3C, 0x3C, 0x3C));
             StatusText.Foreground = new SolidColorBrush(Colors.White);
-            EditorFontSizeLabel.Foreground = new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88));
             FontSizeText.Foreground = new SolidColorBrush(Colors.White);
             PreviewFontSizeText.Foreground = new SolidColorBrush(Colors.White);
             CursorPositionText.Foreground = new SolidColorBrush(Colors.White);
@@ -1533,7 +1771,7 @@ public partial class MainWindow : Window
             FileListHeader.Background = new SolidColorBrush(Color.FromRgb(0x2D, 0x2D, 0x2D));
             FileCountText.Foreground = new SolidColorBrush(Color.FromRgb(0xAA, 0xAA, 0xAA));
             FileListBox.Background = SystemColors.WindowBrush;
-            FileListBox.Foreground = SystemColors.WindowTextBrush;
+            FileListBox.Foreground = SystemColors.WindowTextBrush;                            FileListBox.ItemContainerStyle = CreatePinButtonStyle();
             FileCountStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66));
             SidebarFooter.Background = new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xE8));
 
@@ -1570,7 +1808,7 @@ public partial class MainWindow : Window
             AppStatusBar.Background = new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0));
             AppStatusBar.BorderBrush = new SolidColorBrush(Color.FromRgb(0xD0, 0xD0, 0xD0));
             StatusText.Foreground = SystemColors.WindowTextBrush;
-            EditorFontSizeLabel.Foreground = new SolidColorBrush(Color.FromRgb(0x77, 0x77, 0x77));
+
             FontSizeText.Foreground = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66));
             PreviewFontSizeText.Foreground = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66));
             CursorPositionText.Foreground = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66));
@@ -1924,8 +2162,12 @@ public partial class MainWindow : Window
     {
         SavedIndicator.Text = saved ? "\U0001f4be Saved" : "\U0001f4be Modified";
         SavedIndicator.Foreground = saved
-            ? new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32))
-            : new SolidColorBrush(Color.FromRgb(0xC6, 0x28, 0x28));
+            ? new SolidColorBrush(_isDarkMode
+                ? Color.FromRgb(0x81, 0xC7, 0x84)  // lighter green for dark mode
+                : Color.FromRgb(0x2E, 0x7D, 0x32))  // original green for light mode
+            : new SolidColorBrush(_isDarkMode
+                ? Color.FromRgb(0xEF, 0x9A, 0x9A)  // lighter red for dark mode
+                : Color.FromRgb(0xC6, 0x28, 0x28));  // original red for light mode
     }
 
     #endregion

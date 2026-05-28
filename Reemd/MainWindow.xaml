@@ -63,15 +63,52 @@
                     <ListBox Grid.Row="1" x:Name="FileListBox"
                              Margin="0" BorderThickness="0"
                              FontSize="14"
+                             HorizontalContentAlignment="Stretch"
                              SelectionChanged="FileListBox_SelectionChanged"
                              MouseDoubleClick="FileListBox_MouseDoubleClick"
                              PreviewKeyDown="FileListBox_PreviewKeyDown"
                              VirtualizingStackPanel.IsVirtualizing="True">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding}" 
-                                           Padding="10,4"
-                                           TextTrimming="CharacterEllipsis" />
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock Grid.Column="0"
+                                               Text="{Binding Name}" 
+                                               Padding="8,4,4,4"
+                                               TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Center" />
+
+                                    <Button Grid.Column="1"
+                                            Width="20" Padding="0"
+                                            Margin="0,0,8,0"
+                                            VerticalAlignment="Center"
+                                            HorizontalContentAlignment="Center"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            Click="PinToggle_Click"
+                                            ToolTip="Toggle pin to top">
+                                        <TextBlock Text="📌" FontSize="11" />
+                                        <Button.Style>
+                                            <Style TargetType="Button">
+                                                <Setter Property="Opacity" Value="0.25" />
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsPinned}" Value="True">
+                                                        <Setter Property="Opacity" Value="1" />
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsMouseOver}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
+                                </Grid>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
@@ -206,12 +243,22 @@
                                      HorizontalScrollBarVisibility="Auto"
                                      TextChanged="Editor_TextChanged"
                                      SelectionChanged="Editor_SelectionChanged"
-                                     PreviewKeyDown="Editor_PreviewKeyDown" />
-                            <TextBlock x:Name="EditorFontSizeLabel" Text=""
-                                       FontSize="11" Opacity="0.7"
-                                       VerticalAlignment="Bottom" HorizontalAlignment="Right"
-                                       Margin="0,0,8,8"
-                                       IsHitTestVisible="False" />
+                                     PreviewKeyDown="Editor_PreviewKeyDown">
+                            <TextBox.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Command="ApplicationCommands.Cut" />
+                                    <MenuItem Command="ApplicationCommands.Copy" />
+                                    <MenuItem Command="ApplicationCommands.Paste" />
+                                    <Separator />
+                                    <MenuItem Header="Bold (Ctrl+B)" Click="ContextMenu_Bold_Click" />
+                                    <MenuItem Header="Italic (Ctrl+I)" Click="ContextMenu_Italic_Click" />
+                                    <MenuItem Header="Inline Code (Ctrl+Shift+I)" Click="ContextMenu_InlineCode_Click" />
+                                    <MenuItem Header="Code Block (Ctrl+Shift+C)" Click="ContextMenu_CodeBlock_Click" />
+                                    <Separator />
+                                    <MenuItem Header="Link (Ctrl+K)" Click="ContextMenu_Link_Click" />
+                                </ContextMenu>
+                            </TextBox.ContextMenu>
+                        </TextBox>
                         </Grid>
                     </Grid>
                 </Border>
