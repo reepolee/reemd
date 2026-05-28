@@ -1,0 +1,35 @@
+# .NET build outputs
+bin/
+obj/
+
+# Publish output
+publish/
+publish-*/
+dist/
+
+# User-specific files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# Visual Studio cache files
+.vs/
+
+# JetBrains Rider
+.idea/
+*.sln.iml
+
+# NuGet
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nupkg
+**/packages.lock.json
+
+# msbuild artifact logger
+*.binlog
+
+# macOS
+.DS_Store

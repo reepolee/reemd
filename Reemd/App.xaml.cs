@@ -1,0 +1,190 @@
+using System.Windows;
+using Hardcodet.Wpf.TaskbarNotification;
+using Reemd.Services;
+
+namespace Reemd;
+
+/// <summary>
+/// Application entry point. Manages the system tray icon and global hotkey.
+/// </summary>
+public partial class App : System.Windows.Application
+{
+    private TaskbarIcon? _trayIcon;
+    private HotKeyService? _hotKeyService;
+    private MainWindow? _mainWindow;
+
+    protected override void OnStartup(StartupEventArgs e)
+    {
+        base.OnStartup(e);
+
+        // Use first command-line argument as startup folder, if provided
+        string? startupFolder = e.Args.Length > 0 ? e.Args[0] : null;
+
+        _mainWindow = new MainWindow(startupFolder);
+
+        SetupTrayIcon();
+
+        _hotKeyService = new HotKeyService(_mainWindow);
+        _hotKeyService.HotKeyPressed += OnHotKeyPressed;
+        _hotKeyService.Register();
+
+        _mainWindow.Show();
+        _mainWindow.Activate();
+    }
+
+    /// <summary>
+    /// Shows a balloon notification from the system tray icon.
+    /// </summary>
+    internal void ShowNotification(string title, string text, BalloonIcon icon = BalloonIcon.Info)
+    {
+        _trayIcon?.ShowBalloonTip(title, text, icon);
+    }
+
+    private void SetupTrayIcon()
+    {
+        _trayIcon = new TaskbarIcon
+        {
+            ToolTipText = "Reemd - Markdown Editor",
+            Visibility = Visibility.Visible
+        };
+
+        // Try to load the icon from embedded resources (works with PublishSingleFile)
+        try
+        {
+            var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+            using var stream = assembly.GetManifestResourceStream("Reemd.icon.ico");
+            if (stream != null)
+            {
+                _trayIcon.Icon = new System.Drawing.Icon(stream);
+            }
+            else
+            {
+                _trayIcon.Icon = CreateDefaultIcon();
+            }
+        }
+        catch
+        {
+            _trayIcon.Icon = CreateDefaultIcon();
+        }
+
+        // Create context menu
+        var showItem = new System.Windows.Controls.MenuItem
+        {
+            Header = "Show",
+            Command = new RelayCommand(_ => ShowWindow())
+        };
+
+        var exitItem = new System.Windows.Controls.MenuItem
+        {
+            Header = "Exit",
+            Command = new RelayCommand(_ => ExitApp())
+        };
+
+        _trayIcon.ContextMenu = new System.Windows.Controls.ContextMenu();
+        _trayIcon.ContextMenu.Items.Add(showItem);
+        _trayIcon.ContextMenu.Items.Add(new System.Windows.Controls.Separator());
+        _trayIcon.ContextMenu.Items.Add(exitItem);
+
+        // Double-click to show
+        _trayIcon.DoubleClickCommand = new RelayCommand(_ => ShowWindow());
+    }
+
+    private void OnHotKeyPressed()
+    {
+        if (_mainWindow == null) return;
+
+        if (_mainWindow.IsVisible)
+        {
+            _mainWindow.Hide();
+        }
+        else
+        {
+            ShowWindow();
+        }
+    }
+
+    private void ShowWindow()
+    {
+        if (_mainWindow == null) return;
+
+        _mainWindow.Show();
+
+        // Only restore from minimized — keep maximized if it was maximized when hidden
+        if (_mainWindow.WindowState == WindowState.Minimized)
+            _mainWindow.WindowState = WindowState.Normal;
+
+        _mainWindow.Activate();
+        _mainWindow.Topmost = true;
+        _mainWindow.Topmost = false;
+        _mainWindow.Focus();
+    }
+
+    private void ExitApp()
+    {
+        if (_mainWindow != null)
+        {
+            // Save and shut down without hiding to tray
+            _mainWindow.SaveAndClose();
+        }
+        Cleanup();
+        Shutdown();
+    }
+
+    /// <summary>
+    /// Creates a simple fallback icon programmatically when icon.ico cannot be loaded.
+    /// Draws a blue circle with white "R" text.
+    /// </summary>
+    private static System.Drawing.Icon CreateDefaultIcon()
+    {
+        using var bitmap = new System.Drawing.Bitmap(16, 16);
+        using var g = System.Drawing.Graphics.FromImage(bitmap);
+        g.Clear(System.Drawing.Color.Transparent);
+
+        // Draw a filled blue circle
+        using var brush = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(45, 45, 48));
+        g.FillEllipse(brush, 0, 0, 16, 16);
+
+        // Draw "R" letter
+        using var font = new System.Drawing.Font("Segoe UI", 9, System.Drawing.FontStyle.Bold);
+        using var textBrush = new System.Drawing.SolidBrush(System.Drawing.Color.White);
+        g.DrawString("R", font, textBrush, 2, 1);
+
+        return System.Drawing.Icon.FromHandle(bitmap.GetHicon());
+    }
+
+    private void Cleanup()
+    {
+        _hotKeyService?.Dispose();
+        _trayIcon?.Dispose();
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        Cleanup();
+        base.OnExit(e);
+    }
+}
+
+/// <summary>
+/// Simple ICommand implementation for use with Hardcodet.NotifyIcon.Wpf.
+/// </summary>
+public class RelayCommand : System.Windows.Input.ICommand
+{
+    private readonly Action<object?> _execute;
+    private readonly Func<object?, bool>? _canExecute;
+
+    public RelayCommand(Action<object?> execute, Func<object?, bool>? canExecute = null)
+    {
+        _execute = execute;
+        _canExecute = canExecute;
+    }
+
+    public event System.EventHandler? CanExecuteChanged
+    {
+        add { System.Windows.Input.CommandManager.RequerySuggested += value; }
+        remove { System.Windows.Input.CommandManager.RequerySuggested -= value; }
+    }
+
+    public bool CanExecute(object? parameter) => _canExecute?.Invoke(parameter) ?? true;
+    public void Execute(object? parameter) => _execute(parameter);
+}
