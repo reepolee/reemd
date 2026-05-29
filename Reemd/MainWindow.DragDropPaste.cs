@@ -329,14 +329,23 @@ public partial class MainWindow
     #region Image Paste from Clipboard
 
     /// <summary>
+    /// Guards against re-entering HandlePaste when we invoke Editor.Paste()
+    /// for the default paste fallback.
+    /// </summary>
+    private bool _isDefaultPasting;
+
+    /// <summary>
     /// Handles paste at the command-binding level — catches Ctrl+V, right-click paste,
     /// and Shift+Insert. Checks clipboard for:
     ///   1. An image bitmap → saves to markdown folder, inserts ![filename](path)
     ///   2. Text that looks like an image URL → inserts ![Image](url)
-    /// If neither matches, lets the default paste behavior run.
+    /// If neither matches, invokes the TextBox's native Paste() to insert clipboard text.
     /// </summary>
     private void HandlePaste(ExecutedRoutedEventArgs e)
     {
+        // Prevent recursion if Editor.Paste() somehow re-triggers us
+        if (_isDefaultPasting) return;
+
         // Check 1: clipboard has actual image bitmap
         if (Clipboard.ContainsImage())
         {
@@ -409,8 +418,27 @@ public partial class MainWindow
             }
         }
 
-        // Neither image nor image URL — let default paste handle it (don't set e.Handled)
+        // Neither image nor image URL — invoke the TextBox's native paste behavior.
+        // Our CommandBinding takes priority over the TextBox's internal paste handler,
+        // so simply not setting e.Handled does NOT cause the default paste to fire.
+        // We must explicitly call Editor.Paste() (which accesses the clipboard directly
+        // without going through command routing) and then mark the event handled.
+        _isDefaultPasting = true;
+        try
+        {
+            Editor.Paste();
+            e.Handled = true;
+        }
+        catch
+        {
+            // Best-effort – if Paste() fails, there's nothing else to fall back to
+        }
+        finally
+        {
+            _isDefaultPasting = false;
+        }
     }
 
     #endregion
 }
+
