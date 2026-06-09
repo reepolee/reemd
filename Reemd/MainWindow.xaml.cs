@@ -77,6 +77,25 @@ public partial class MainWindow : Window
     public MainWindow(string? startupFolder = null)
     {
         InitializeComponent();
+
+        // Set window icon from embedded resource (works with PublishSingleFile)
+        try
+        {
+            var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+            using var stream = assembly.GetManifestResourceStream("Reemd.icon.ico");
+            if (stream != null)
+            {
+                using var icon = new System.Drawing.Icon(stream);
+                Icon = System.Windows.Interop.Imaging.CreateBitmapSourceFromHIcon(
+                    icon.Handle,
+                    System.Windows.Int32Rect.Empty,
+                    System.Windows.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
+            }
+        }
+        catch
+        {
+            // Window icon is best-effort
+        }
         FileListBox.ItemsSource = _fileList;
         _autoSaveTimer.Tick += AutoSaveTimer_Tick;
         _previewTimer.Tick += PreviewTimer_Tick;

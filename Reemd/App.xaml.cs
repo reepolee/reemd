@@ -40,24 +40,7 @@ public partial class App : System.Windows.Application
             Visibility = Visibility.Visible
         };
 
-        // Try to load the icon from embedded resources (works with PublishSingleFile)
-        try
-        {
-            var assembly = System.Reflection.Assembly.GetExecutingAssembly();
-            using var stream = assembly.GetManifestResourceStream("Reemd.icon.ico");
-            if (stream != null)
-            {
-                _trayIcon.Icon = new System.Drawing.Icon(stream);
-            }
-            else
-            {
-                _trayIcon.Icon = CreateDefaultIcon();
-            }
-        }
-        catch
-        {
-            _trayIcon.Icon = CreateDefaultIcon();
-        }
+        _trayIcon.Icon = LoadAppIcon() ?? CreateDefaultIcon();
 
         // Create context menu
         var showItem = new System.Windows.Controls.MenuItem
@@ -120,6 +103,61 @@ public partial class App : System.Windows.Application
         }
         Cleanup();
         Shutdown();
+    }
+
+    /// <summary>
+    /// Loads the application icon using multiple strategies:
+    /// 1. Managed embedded resource (GetManifestResourceStream)
+    /// 2. File alongside the executable
+    /// 3. Extract from the assembly's Win32 icon resource
+    /// Returns null if all strategies fail.
+    /// </summary>
+    private static System.Drawing.Icon? LoadAppIcon()
+    {
+        // Strategy 1: Managed embedded resource (works with PublishSingleFile)
+        try
+        {
+            var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+            using var stream = assembly.GetManifestResourceStream("Reemd.icon.ico");
+            if (stream != null)
+                return new System.Drawing.Icon(stream);
+        }
+        catch
+        {
+            // Fall through
+        }
+
+        // Strategy 2: File alongside the executable
+        try
+        {
+            var iconPath = System.IO.Path.Combine(
+                AppDomain.CurrentDomain.BaseDirectory, "icon.ico");
+            if (System.IO.File.Exists(iconPath))
+                return new System.Drawing.Icon(iconPath);
+        }
+        catch
+        {
+            // Fall through
+        }
+
+        // Strategy 3: Extract icon from the EXE's Win32 resource (set via <ApplicationIcon>)
+        // Note: Assembly.Location returns the DLL path, but the icon is on the EXE host.
+        try
+        {
+            var exePath = Environment.ProcessPath;
+            if (!string.IsNullOrEmpty(exePath) && System.IO.File.Exists(exePath))
+            {
+                var extracted = System.Drawing.Icon.ExtractAssociatedIcon(exePath);
+                if (extracted != null)
+                    return extracted;
+            }
+        }
+        catch
+        {
+            // Fall through
+        }
+
+        return null;
     }
 
     /// <summary>

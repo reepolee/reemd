@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Builds or publishes the Reemd markdown editor.
+    Builds or publishes the reemd markdown editor.
 .DESCRIPTION
     Default mode: restores packages and builds with dotnet.
     With -Publish: produces a self-contained Release build in a publish/ directory,
@@ -31,14 +31,14 @@ param(
     [switch]$NoBuild
 )
 
-$ProjectDir = Join-Path $PSScriptRoot "Reemd"
-$ProjectFile = Join-Path $ProjectDir "Reemd.csproj"
+$ProjectDir = Join-Path $PSScriptRoot "reemd"
+$ProjectFile = Join-Path $ProjectDir "reemd.csproj"
 $Configuration = if ($Release) { "Release" } else { "Debug" }
 
 # ── Kill any running instance ──────────────────────────────────────────────
-$proc = Get-Process -Name "Reemd" -ErrorAction SilentlyContinue
+$proc = Get-Process -Name "reemd" -ErrorAction SilentlyContinue
 if ($proc) {
-    Write-Host "Stopping running Reemd process(es)..." -ForegroundColor Yellow
+    Write-Host "Stopping running reemd process(es)..." -ForegroundColor Yellow
     $proc | Stop-Process -Force
     Start-Sleep -Milliseconds 500
 }
@@ -55,7 +55,7 @@ if ($LASTEXITCODE -ne 0) {
 if ($Publish) {
     $OutputPath = Join-Path $PSScriptRoot $OutputDir
 
-    Write-Host "=== Publishing Reemd ($Configuration, $Runtime) ===" -ForegroundColor Cyan
+    Write-Host "=== Publishing reemd ($Configuration, $Runtime) ===" -ForegroundColor Cyan
     Write-Host "  Output:  $OutputPath"
     Write-Host ""
 
@@ -107,7 +107,7 @@ if ($Publish) {
 }
 
 # ── Build mode (default) ───────────────────────────────────────────────────
-Write-Host "=== Building Reemd ($Configuration) ===" -ForegroundColor Cyan
+Write-Host "=== Building reemd ($Configuration) ===" -ForegroundColor Cyan
 Write-Host ""
 
 Write-Host "Building..." -ForegroundColor Cyan
