@@ -12,6 +12,11 @@ public partial class MainWindow
 {
     #region Keyboard & Mouse Shortcuts
 
+    private async void BtnPull_Click(object sender, RoutedEventArgs e)
+    {
+        await ForcePullAsync();
+    }
+
     private void BtnScrollTop_Click(object sender, RoutedEventArgs e)
     {
         ScrollEditorToTop();
@@ -113,6 +118,16 @@ public partial class MainWindow
             (e.Key == Key.Z || e.SystemKey == Key.Z))
         {
             ToggleWordWrap();
+            e.Handled = true;
+            return;
+        }
+
+        // Ctrl+Shift+P — force git pull
+        if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control &&
+            (Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift &&
+            e.Key == Key.P)
+        {
+            _ = ForcePullAsync();
             e.Handled = true;
             return;
         }

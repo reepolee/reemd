@@ -123,6 +123,26 @@ public sealed class GitHubService
     }
 
     /// <summary>
+    /// Pulls latest changes from the remote (git pull).
+    /// </summary>
+    public async Task<(bool Success, string Message)> PullAsync(string markdownFolder)
+    {
+        try
+        {
+            var (exitCode, stdout, stderr) = await RunGitCommandAsync($"-C \"{markdownFolder}\" pull", 60);
+            if (exitCode == 0)
+                return (true, stdout.Contains("Already up to date", StringComparison.OrdinalIgnoreCase)
+                    ? "Already up to date."
+                    : "Pulled latest changes.");
+            return (false, $"Git pull failed: {stderr}");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Pull error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// Runs a `gh` command asynchronously.
     /// </summary>
     private static async Task<(int ExitCode, string StdOut, string StdErr)> RunGhCommandAsync(string arguments, int timeoutSeconds = 15)

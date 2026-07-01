@@ -27,6 +27,8 @@
             <Button x:Name="BtnOpenFolder" Content="📂" ToolTip="Open folder in File Explorer" Click="BtnOpenFolder_Click" />
             <Separator />
             <ToggleButton x:Name="BtnToggleTheme" Content="🌙" ToolTip="Toggle dark/light theme" Click="BtnToggleTheme_Click" />
+            <Separator />
+            <Button x:Name="BtnPull" Content="⬇️ Pull" ToolTip="Pull latest changes from remote (Ctrl+Shift+P)" Click="BtnPull_Click" />
         </ToolBar>
 
         <!-- Main content area -->
