@@ -13,7 +13,7 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// Opens the New GitHub Issue dialog (Ctrl+Shift+B, in-app or as a global hotkey).
+    /// Opens the New GitHub Issue dialog (Ctrl+Alt+I, in-app or as a global hotkey).
     /// Does not show/activate the main window — the dialog can open on its own even
     /// while the main window is hidden.
     /// </summary>

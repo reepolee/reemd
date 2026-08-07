@@ -132,10 +132,10 @@ public partial class MainWindow
             return;
         }
 
-        // Ctrl+Shift+B — open New GitHub Issue dialog
+        // Ctrl+Alt+I — open New GitHub Issue dialog
         if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control &&
-            (Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift &&
-            e.Key == Key.B)
+            (Keyboard.Modifiers & ModifierKeys.Alt) == ModifierKeys.Alt &&
+            e.Key == Key.I)
         {
             OpenNewIssueDialog();
             e.Handled = true;

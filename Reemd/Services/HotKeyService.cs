@@ -11,6 +11,7 @@ namespace Reemd.Services;
 public sealed class HotKeyService : IDisposable
 {
     private const int WM_HOTKEY = 0x0312;
+    public const uint MOD_ALT = 0x0001;
     public const uint MOD_CONTROL = 0x0002;
     public const uint MOD_SHIFT = 0x0004;
 

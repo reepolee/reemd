@@ -30,7 +30,7 @@
             <Separator />
             <Button x:Name="BtnPull" Content="⬇️ Pull" ToolTip="Pull latest changes from remote (Ctrl+Shift+P)" Click="BtnPull_Click" />
             <Separator />
-            <Button x:Name="BtnNewIssue" Content="🐛 New Issue" ToolTip="Create a new GitHub issue (Ctrl+Shift+B)" Click="BtnNewIssue_Click" />
+            <Button x:Name="BtnNewIssue" Content="🐛 New Issue" ToolTip="Create a new GitHub issue (Ctrl+Alt+I)" Click="BtnNewIssue_Click" />
         </ToolBar>
 
         <!-- Main content area -->

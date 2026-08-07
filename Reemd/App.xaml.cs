@@ -10,7 +10,7 @@ namespace Reemd;
 public partial class App : System.Windows.Application
 {
     private const uint VK_SPACE = 0x20;
-    private const uint VK_B = 0x42;
+    private const uint VK_I = 0x49;
 
     private TaskbarIcon? _trayIcon;
     private HotKeyService? _hotKeyService;
@@ -29,7 +29,7 @@ public partial class App : System.Windows.Application
 
         _hotKeyService = new HotKeyService(_mainWindow);
         _hotKeyService.AddHotKey("ToggleWindow", HotKeyService.MOD_CONTROL | HotKeyService.MOD_SHIFT, VK_SPACE);
-        _hotKeyService.AddHotKey("NewIssue", HotKeyService.MOD_CONTROL | HotKeyService.MOD_SHIFT, VK_B);
+        _hotKeyService.AddHotKey("NewIssue", HotKeyService.MOD_CONTROL | HotKeyService.MOD_ALT, VK_I);
         _hotKeyService.HotKeyPressed += OnHotKeyPressed;
         _hotKeyService.Register();
 
