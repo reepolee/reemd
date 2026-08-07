@@ -9,6 +9,9 @@ namespace Reemd;
 /// </summary>
 public partial class App : System.Windows.Application
 {
+    private const uint VK_SPACE = 0x20;
+    private const uint VK_B = 0x42;
+
     private TaskbarIcon? _trayIcon;
     private HotKeyService? _hotKeyService;
     private MainWindow? _mainWindow;
@@ -25,6 +28,8 @@ public partial class App : System.Windows.Application
         SetupTrayIcon();
 
         _hotKeyService = new HotKeyService(_mainWindow);
+        _hotKeyService.AddHotKey("ToggleWindow", HotKeyService.MOD_CONTROL | HotKeyService.MOD_SHIFT, VK_SPACE);
+        _hotKeyService.AddHotKey("NewIssue", HotKeyService.MOD_CONTROL | HotKeyService.MOD_SHIFT, VK_B);
         _hotKeyService.HotKeyPressed += OnHotKeyPressed;
         _hotKeyService.Register();
 
@@ -64,17 +69,21 @@ public partial class App : System.Windows.Application
         _trayIcon.DoubleClickCommand = new RelayCommand(_ => ShowWindow());
     }
 
-    private void OnHotKeyPressed()
+    private void OnHotKeyPressed(string name)
     {
         if (_mainWindow == null) return;
 
-        if (_mainWindow.IsVisible)
+        switch (name)
         {
-            _mainWindow.Hide();
-        }
-        else
-        {
-            ShowWindow();
+            case "ToggleWindow":
+                if (_mainWindow.IsVisible)
+                    _mainWindow.Hide();
+                else
+                    ShowWindow();
+                break;
+            case "NewIssue":
+                _mainWindow.OpenNewIssueDialog();
+                break;
         }
     }
 

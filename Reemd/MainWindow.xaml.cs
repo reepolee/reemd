@@ -107,6 +107,7 @@ public partial class MainWindow : Window
 
         // Load settings first — restores window position, column widths, saved font sizes, etc.
         LoadSettings();
+        _gitHubService.LoadUsedRepos();
 
         // Determine folder — startup arg overrides the folder from settings
         string folder;

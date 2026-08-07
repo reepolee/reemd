@@ -1,10 +1,30 @@
 using System.IO;
 using System.Threading.Tasks;
+using System.Windows;
+using Reemd.Dialogs;
 
 namespace Reemd;
 
 public partial class MainWindow
 {
+    private void BtnNewIssue_Click(object sender, RoutedEventArgs e)
+    {
+        OpenNewIssueDialog();
+    }
+
+    /// <summary>
+    /// Opens the New GitHub Issue dialog (Ctrl+Shift+B, in-app or as a global hotkey).
+    /// Does not show/activate the main window — the dialog can open on its own even
+    /// while the main window is hidden.
+    /// </summary>
+    internal void OpenNewIssueDialog()
+    {
+        var dialog = new NewIssueDialog(_gitHubService, _isDarkMode) { Owner = this };
+        var result = dialog.ShowDialog();
+        if (result == true)
+            SetStatus("GitHub issue created.");
+    }
+
     #region GitHub Sync
 
     /// <summary>

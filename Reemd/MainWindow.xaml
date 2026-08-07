@@ -15,7 +15,7 @@
         </Grid.RowDefinitions>
 
         <!-- Toolbar -->
-        <ToolBar Grid.Row="0" BandIndex="0" Band="0">
+        <ToolBar Grid.Row="0" BandIndex="0" Band="0" FontSize="14">
             <Label Content="Folder:" VerticalAlignment="Center" Padding="2,0" />
             <ComboBox x:Name="FolderCombo" MinWidth="200" IsEditable="True"
                       ToolTip="Path to folder with .md files"
@@ -29,6 +29,8 @@
             <ToggleButton x:Name="BtnToggleTheme" Content="🌙" ToolTip="Toggle dark/light theme" Click="BtnToggleTheme_Click" />
             <Separator />
             <Button x:Name="BtnPull" Content="⬇️ Pull" ToolTip="Pull latest changes from remote (Ctrl+Shift+P)" Click="BtnPull_Click" />
+            <Separator />
+            <Button x:Name="BtnNewIssue" Content="🐛 New Issue" ToolTip="Create a new GitHub issue (Ctrl+Shift+B)" Click="BtnNewIssue_Click" />
         </ToolBar>
 
         <!-- Main content area -->
@@ -55,7 +57,7 @@
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Text="Files" FontWeight="Bold" Foreground="White" VerticalAlignment="Center" />
-                            <TextBlock Grid.Column="1" x:Name="FileCountText" Foreground="#AAAAAA" FontSize="11" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="1" x:Name="FileCountText" Foreground="#AAAAAA" FontSize="12" VerticalAlignment="Center" />
                         </Grid>
                     </Border>
 
@@ -114,7 +116,7 @@
 
                     <Border x:Name="SidebarFooter" Grid.Row="2" Background="#E8E8E8" Padding="6,4">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock x:Name="FileCountStatus" FontSize="11" Foreground="#666" />
+                            <TextBlock x:Name="FileCountStatus" FontSize="12" Foreground="#666" />
                         </StackPanel>
                     </Border>
                 </Grid>
@@ -164,23 +166,23 @@
                                          PreviewKeyDown="FindTextBox_PreviewKeyDown" />
 
                                 <TextBlock x:Name="FindMatchCount" Grid.Column="1"
-                                           Text="" FontSize="11"
+                                           Text="" FontSize="12"
                                            VerticalAlignment="Center" HorizontalAlignment="Center"
                                            Margin="8,0" MinWidth="40" TextAlignment="Center"
                                            Foreground="#666" />
 
                                 <Button x:Name="FindPrevBtn" Grid.Column="2"
-                                        Content="▲" FontSize="10" Width="24" Height="22" Padding="0"
+                                        Content="▲" FontSize="11" Width="24" Height="22" Padding="0"
                                         ToolTip="Previous match (Shift+Enter)"
                                         Click="FindPrevBtn_Click" />
 
                                 <Button x:Name="FindNextBtn" Grid.Column="3"
-                                        Content="▼" FontSize="10" Width="24" Height="22" Padding="0"
+                                        Content="▼" FontSize="11" Width="24" Height="22" Padding="0"
                                         ToolTip="Next match (Enter)"
                                         Click="FindNextBtn_Click" />
 
                                 <Button x:Name="FindCloseBtn" Grid.Column="4"
-                                        Content="✕" FontSize="12" Width="24" Height="22" Padding="0"
+                                        Content="✕" FontSize="13" Width="24" Height="22" Padding="0"
                                         Margin="8,0,0,0"
                                         ToolTip="Close (Esc)"
                                         Click="FindCloseBtn_Click" />
@@ -206,21 +208,21 @@
                                          PreviewKeyDown="ReplaceTextBox_PreviewKeyDown" />
 
                                 <Button x:Name="ReplaceBtn" Grid.Column="1"
-                                        Content="Replace" FontSize="11"
+                                        Content="Replace" FontSize="12"
                                         Height="22" MinWidth="60" Padding="6,0"
                                         Margin="8,0,0,0"
                                         ToolTip="Replace current match and find next (Ctrl+Enter)"
                                         Click="ReplaceBtn_Click" />
 
                                 <Button x:Name="ReplaceAllBtn" Grid.Column="2"
-                                        Content="All" FontSize="11"
+                                        Content="All" FontSize="12"
                                         Height="22" MinWidth="34" Padding="6,0"
                                         Margin="4,0,0,0"
                                         ToolTip="Replace all matches"
                                         Click="ReplaceAllBtn_Click" />
 
                                 <Button x:Name="ReplaceCloseBtn" Grid.Column="3"
-                                        Content="✕" FontSize="12" Width="24" Height="22" Padding="0"
+                                        Content="✕" FontSize="13" Width="24" Height="22" Padding="0"
                                         Margin="8,0,0,0"
                                         ToolTip="Close (Esc)"
                                         Click="ReplaceCloseBtn_Click" />
@@ -301,29 +303,29 @@
             </StatusBar.ItemsPanel>
 
             <StatusBarItem Grid.Column="0">
-                <TextBlock x:Name="StatusText" Text="Ready" FontSize="12" Padding="4,2" />
+                <TextBlock x:Name="StatusText" Text="Ready" FontSize="13" Padding="4,2" />
             </StatusBarItem>
             <StatusBarItem Grid.Column="1">
-                <TextBlock x:Name="SavedIndicator" Text="💾 Saved" FontSize="11" Foreground="#2E7D32" Padding="4,2" />
+                <TextBlock x:Name="SavedIndicator" Text="💾 Saved" FontSize="12" Foreground="#2E7D32" Padding="4,2" />
             </StatusBarItem>
             <StatusBarItem Grid.Column="2" HorizontalContentAlignment="Right">
                 <StackPanel Orientation="Horizontal">
-                    <TextBlock x:Name="FontSizeText" Text="" FontSize="11" Padding="4,2" />
-                    <TextBlock x:Name="PreviewFontSizeText" Text="" FontSize="11" Padding="4,2" />
+                    <TextBlock x:Name="FontSizeText" Text="" FontSize="12" Padding="4,2" />
+                    <TextBlock x:Name="PreviewFontSizeText" Text="" FontSize="12" Padding="4,2" />
                 </StackPanel>
             </StatusBarItem>
             <StatusBarItem Grid.Column="3" Padding="2,0">
                 <StackPanel Orientation="Horizontal">
                     <Button x:Name="BtnScrollTop"
                             Content="⤒"
-                            FontSize="12"
+                            FontSize="13"
                             Width="22" Height="20"
                             Padding="0"
                             ToolTip="Scroll to top (Ctrl+Home)"
                             Click="BtnScrollTop_Click" />
                     <Button x:Name="BtnScrollBottom"
                             Content="⤓"
-                            FontSize="12"
+                            FontSize="13"
                             Width="22" Height="20"
                             Padding="0"
                             ToolTip="Scroll to bottom (Ctrl+End)"
@@ -331,13 +333,13 @@
                 </StackPanel>
             </StatusBarItem>
             <StatusBarItem Grid.Column="4">
-                <TextBlock x:Name="CursorPositionText" Text="Ln 1, Col 1" FontSize="11" Foreground="#666" Padding="4,2" />
+                <TextBlock x:Name="CursorPositionText" Text="Ln 1, Col 1" FontSize="12" Foreground="#666" Padding="4,2" />
             </StatusBarItem>
             <StatusBarItem Grid.Column="5">
-                <TextBlock x:Name="GitHubStatusText" Text="" FontSize="11" Foreground="#666" Padding="4,2" />
+                <TextBlock x:Name="GitHubStatusText" Text="" FontSize="12" Foreground="#666" Padding="4,2" />
             </StatusBarItem>
             <StatusBarItem Grid.Column="6">
-                <TextBlock x:Name="LastSyncText" Text="" FontSize="11" Foreground="#666" Padding="4,2" />
+                <TextBlock x:Name="LastSyncText" Text="" FontSize="12" Foreground="#666" Padding="4,2" />
             </StatusBarItem>
         </StatusBar>
     </Grid>

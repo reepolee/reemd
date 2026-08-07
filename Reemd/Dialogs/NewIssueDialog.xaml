@@ -1,0 +1,77 @@
+<Window x:Class="Reemd.Dialogs.NewIssueDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="New GitHub Issue"
+        Height="700" Width="520"
+        MinHeight="360" MinWidth="420"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResizeWithGrip"
+        ShowInTaskbar="False"
+        FontSize="14">
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Repo row -->
+        <Grid Grid.Row="0" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Label Grid.Column="0" Content="Repo:" VerticalAlignment="Center" Padding="0,0,6,0" />
+            <ComboBox x:Name="RepoCombo" Grid.Column="1" VerticalContentAlignment="Center" />
+            <Button x:Name="BtnReload" Grid.Column="2" Content="Reload" Margin="6,0,0,0"
+                    Padding="8,2" Click="BtnReload_Click" />
+        </Grid>
+
+        <!-- Title row -->
+        <Label Grid.Row="1" Content="Title:" Padding="0,0,0,2" />
+        <TextBox x:Name="TitleTextBox" Grid.Row="2" Margin="0,0,0,8" Padding="4" />
+
+        <!-- Labels -->
+        <Label Grid.Row="3" Content="Labels:" Padding="0,0,0,2" />
+        <ItemsControl x:Name="LabelsList" Grid.Row="4" Margin="0,0,0,8">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <WrapPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <CheckBox IsChecked="{Binding IsChecked}" Margin="0,0,10,4" VerticalContentAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                            <Border Background="{Binding ColorBrush}" Width="10" Height="10"
+                                    CornerRadius="2" Margin="0,0,5,0" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </CheckBox>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- Description -->
+        <Label Grid.Row="5" Content="Description:" Padding="0,0,0,2" VerticalAlignment="Top" />
+        <TextBox x:Name="DescriptionTextBox" Grid.Row="5" Margin="0,20,0,8" Padding="4"
+                 AcceptsReturn="True" AcceptsTab="True" TextWrapping="Wrap"
+                 VerticalScrollBarVisibility="Auto" />
+
+        <!-- Status -->
+        <TextBlock x:Name="StatusTextBlock" Grid.Row="6" Margin="0,0,0,8" TextWrapping="Wrap" />
+
+        <!-- Buttons -->
+        <StackPanel Grid.Row="7" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button x:Name="BtnSubmit" Content="Create Issue" IsDefault="True" Padding="10,4"
+                    Margin="0,0,6,0" Click="BtnSubmit_Click" />
+            <Button x:Name="BtnCancel" Content="Cancel" IsCancel="True" Padding="10,4" Click="BtnCancel_Click" />
+        </StackPanel>
+    </Grid>
+</Window>

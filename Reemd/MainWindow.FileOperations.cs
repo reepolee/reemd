@@ -323,7 +323,8 @@ public partial class MainWindow
             ResizeMode = ResizeMode.NoResize,
             WindowStyle = WindowStyle.ToolWindow,
             Background = new SolidColorBrush(bg),
-            Foreground = new SolidColorBrush(fg)
+            Foreground = new SolidColorBrush(fg),
+            FontSize = 14
         };
 
         var stack = new StackPanel { Margin = new Thickness(12) };

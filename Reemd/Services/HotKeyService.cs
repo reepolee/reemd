@@ -5,26 +5,35 @@ using System.Windows.Interop;
 namespace Reemd.Services;
 
 /// <summary>
-/// Registers and manages a global hotkey (Ctrl+Shift+Space) to bring the app window to the foreground.
+/// Registers and manages global (system-wide) hotkeys via RegisterHotKey/WM_HOTKEY.
+/// Multiple hotkeys can be registered; HotKeyPressed reports which one fired.
 /// </summary>
 public sealed class HotKeyService : IDisposable
 {
     private const int WM_HOTKEY = 0x0312;
-    private const uint MOD_CONTROL = 0x0002;
-    private const uint MOD_SHIFT = 0x0004;
-    private const uint VK_SPACE = 0x20;
+    public const uint MOD_CONTROL = 0x0002;
+    public const uint MOD_SHIFT = 0x0004;
 
     private readonly Window _window;
-    private readonly int _hotKeyId;
+    private readonly List<(int Id, string Name, uint Modifiers, uint VirtualKey)> _pendingHotKeys = new();
+    private readonly Dictionary<int, string> _registeredNames = new();
     private HwndSource? _source;
-    private bool _registered;
+    private int _nextId = 1;
 
-    public event Action? HotKeyPressed;
+    public event Action<string>? HotKeyPressed;
 
     public HotKeyService(Window window)
     {
         _window = window;
-        _hotKeyId = GetHashCode();
+    }
+
+    /// <summary>
+    /// Queues a hotkey for registration, identified by name (reported via HotKeyPressed).
+    /// Must be called before Register().
+    /// </summary>
+    public void AddHotKey(string name, uint modifiers, uint virtualKey)
+    {
+        _pendingHotKeys.Add((_nextId++, name, modifiers, virtualKey));
     }
 
     public void Register()
@@ -36,29 +45,35 @@ public sealed class HotKeyService : IDisposable
             return;
         }
 
-        RegisterHotKeyCore();
+        RegisterHotKeysCore();
     }
 
     private void OnSourceInitialized(object? sender, EventArgs e)
     {
         _window.SourceInitialized -= OnSourceInitialized;
         _source = PresentationSource.FromVisual(_window) as HwndSource;
-        RegisterHotKeyCore();
+        RegisterHotKeysCore();
     }
 
-    private void RegisterHotKeyCore()
+    private void RegisterHotKeysCore()
     {
         if (_source == null) return;
 
-        _registered = RegisterHotKey(_source.Handle, _hotKeyId, MOD_CONTROL | MOD_SHIFT, VK_SPACE);
-
-        if (!_registered)
+        foreach (var (id, name, modifiers, virtualKey) in _pendingHotKeys)
         {
-            MessageBox.Show(
-                "Failed to register global hotkey (Ctrl+Shift+Space). It may already be in use by another application.",
-                "Hotkey Registration",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+            var registered = RegisterHotKey(_source.Handle, id, modifiers, virtualKey);
+            if (registered)
+            {
+                _registeredNames[id] = name;
+            }
+            else
+            {
+                MessageBox.Show(
+                    $"Failed to register global hotkey \"{name}\". It may already be in use by another application.",
+                    "Hotkey Registration",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
         }
 
         _source.AddHook(WndProc);
@@ -66,9 +81,9 @@ public sealed class HotKeyService : IDisposable
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
-        if (msg == WM_HOTKEY && wParam.ToInt32() == _hotKeyId)
+        if (msg == WM_HOTKEY && _registeredNames.TryGetValue(wParam.ToInt32(), out var name))
         {
-            HotKeyPressed?.Invoke();
+            HotKeyPressed?.Invoke(name);
             handled = true;
         }
         return IntPtr.Zero;
@@ -82,11 +97,12 @@ public sealed class HotKeyService : IDisposable
 
     public void Dispose()
     {
-        if (_registered && _source != null)
+        if (_source != null)
         {
-            UnregisterHotKey(_source.Handle, _hotKeyId);
+            foreach (var id in _registeredNames.Keys)
+                UnregisterHotKey(_source.Handle, id);
             _source.RemoveHook(WndProc);
-            _registered = false;
+            _registeredNames.Clear();
         }
     }
 }

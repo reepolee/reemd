@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
+using System.Text.Json;
 
 namespace Reemd.Services;
 
@@ -11,10 +13,63 @@ public sealed class GitHubService
 {
     private const string GhExe = "gh";
     private const string GitExe = "git";
+    private const string ReeRepoOrg = "reepolee";
 
     public bool IsAuthenticated { get; private set; }
     public string? CurrentUser { get; private set; }
     public string? CurrentRepo { get; private set; }
+
+    private readonly List<string> _usedRepos = new();
+    private static readonly string UsedReposPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Reemd", "used_repos.json");
+
+    /// <summary>
+    /// Repos (nameWithOwner) an issue has been created for, most recent first.
+    /// Persisted to used_repos.json so the dialog can populate instantly without a GitHub call.
+    /// </summary>
+    public IReadOnlyList<string> UsedRepos => _usedRepos;
+
+    /// <summary>
+    /// Loads the used-repos list from disk (best-effort, no-op if missing/invalid).
+    /// </summary>
+    public void LoadUsedRepos()
+    {
+        try
+        {
+            if (!File.Exists(UsedReposPath)) return;
+            var json = File.ReadAllText(UsedReposPath);
+            var repos = JsonSerializer.Deserialize<List<string>>(json);
+            if (repos == null) return;
+            _usedRepos.Clear();
+            _usedRepos.AddRange(repos);
+        }
+        catch
+        {
+            // Best-effort — missing/corrupt file just means an empty list.
+        }
+    }
+
+    /// <summary>
+    /// Records a repo as just-used (issue created), moving it to the front of the
+    /// used-repos list and persisting to used_repos.json.
+    /// </summary>
+    public void RecordRepoUsed(string repoNameWithOwner)
+    {
+        _usedRepos.RemoveAll(r => string.Equals(r, repoNameWithOwner, StringComparison.OrdinalIgnoreCase));
+        _usedRepos.Insert(0, repoNameWithOwner);
+
+        try
+        {
+            var dir = Path.GetDirectoryName(UsedReposPath);
+            if (dir != null && !Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
+            File.WriteAllText(UsedReposPath, JsonSerializer.Serialize(_usedRepos));
+        }
+        catch
+        {
+            // Best-effort — persistence failure should not block issue creation.
+        }
+    }
 
     /// <summary>
     /// Checks if the `gh` CLI is installed and authenticated.
@@ -143,6 +198,60 @@ public sealed class GitHubService
     }
 
     /// <summary>
+    /// Lists ALL repositories under the reepolee org whose name starts with "ree", fetched
+    /// fresh from GitHub every call (not cached, not persisted) — used only by the dialog's
+    /// "Reload" action to find repos never sent an issue to before.
+    /// </summary>
+    public async Task<List<string>> ListReeRepositoriesAsync()
+    {
+        var (exitCode, output, error) = await RunGhCommandAsync(
+            $"repo list {ReeRepoOrg} --json nameWithOwner --limit 200", 30);
+        if (exitCode != 0)
+            throw new InvalidOperationException($"Failed to list repositories: {error}");
+
+        var repos = new List<string>();
+        using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(output) ? "[]" : output);
+        foreach (var entry in doc.RootElement.EnumerateArray())
+        {
+            var nameWithOwner = entry.GetProperty("nameWithOwner").GetString();
+            if (nameWithOwner == null) continue;
+            var repoName = nameWithOwner.Contains('/') ? nameWithOwner[(nameWithOwner.IndexOf('/') + 1)..] : nameWithOwner;
+            if (repoName.StartsWith("ree", StringComparison.OrdinalIgnoreCase))
+                repos.Add(nameWithOwner);
+        }
+
+        repos.Sort(StringComparer.OrdinalIgnoreCase);
+        return repos;
+    }
+
+    /// <summary>
+    /// Creates a new GitHub issue on the given repo (format "owner/name").
+    /// The body is piped via stdin to avoid shell-escaping a multi-line body.
+    /// </summary>
+    public async Task<(bool Success, string Message)> CreateIssueAsync(string repoNameWithOwner, string title, string body, IEnumerable<string>? labels = null)
+    {
+        try
+        {
+            var arguments = $"issue create --repo \"{repoNameWithOwner}\" --title \"{title.Replace("\"", "\\\"")}\" --body-file -";
+            if (labels != null)
+            {
+                foreach (var label in labels)
+                    arguments += $" --label \"{label.Replace("\"", "\\\"")}\"";
+            }
+
+            var (exitCode, output, error) = await RunProcessAsync(GhExe, arguments, 30, body);
+            if (exitCode != 0)
+                return (false, $"Failed to create issue: {error}");
+
+            return (true, output.Trim());
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Create issue error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// Runs a `gh` command asynchronously.
     /// </summary>
     private static async Task<(int ExitCode, string StdOut, string StdErr)> RunGhCommandAsync(string arguments, int timeoutSeconds = 15)
@@ -160,8 +269,10 @@ public sealed class GitHubService
 
     /// <summary>
     /// Runs an arbitrary process asynchronously and returns the exit code, stdout, and stderr.
+    /// When stdinInput is provided, it is written to the process's standard input and closed,
+    /// so the child process (e.g. `gh ... --body-file -`) can read it.
     /// </summary>
-    private static async Task<(int ExitCode, string StdOut, string StdErr)> RunProcessAsync(string fileName, string arguments, int timeoutSeconds)
+    private static async Task<(int ExitCode, string StdOut, string StdErr)> RunProcessAsync(string fileName, string arguments, int timeoutSeconds, string? stdinInput = null)
     {
         var psi = new ProcessStartInfo
         {
@@ -169,12 +280,19 @@ public sealed class GitHubService
             Arguments = arguments,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            RedirectStandardInput = stdinInput != null,
             UseShellExecute = false,
             CreateNoWindow = true
         };
 
         using var process = new Process { StartInfo = psi };
         process.Start();
+
+        if (stdinInput != null)
+        {
+            await process.StandardInput.WriteAsync(stdinInput);
+            process.StandardInput.Close();
+        }
 
         var stdoutTask = process.StandardOutput.ReadToEndAsync();
         var stderrTask = process.StandardError.ReadToEndAsync();

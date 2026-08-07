@@ -132,6 +132,16 @@ public partial class MainWindow
             return;
         }
 
+        // Ctrl+Shift+B — open New GitHub Issue dialog
+        if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control &&
+            (Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift &&
+            e.Key == Key.B)
+        {
+            OpenNewIssueDialog();
+            e.Handled = true;
+            return;
+        }
+
         // Ctrl+Plus/Minus/0 (no Shift) — context-sensitive: font of the active panel
         if (Keyboard.Modifiers == ModifierKeys.Control)
         {
