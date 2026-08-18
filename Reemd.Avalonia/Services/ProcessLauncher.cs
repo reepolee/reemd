@@ -33,6 +33,12 @@ public static class ProcessLauncher
     /// </summary>
     public static void LaunchVSCode(string path)
     {
+        if (OperatingSystem.IsMacOS())
+        {
+            LaunchVSCodeMac(path);
+            return;
+        }
+
         try
         {
             Process.Start(new ProcessStartInfo("code", $"\"{path}\"") { UseShellExecute = true });
@@ -43,23 +49,16 @@ public static class ProcessLauncher
             // Fall through to known install locations
         }
 
-        var candidates = OperatingSystem.IsMacOS()
-            ? new[]
-            {
-                "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
-            }
-            : new[]
-            {
-                @"%LOCALAPPDATA%\Programs\Microsoft VS Code\Code.exe",
-                @"%ProgramFiles%\Microsoft VS Code\Code.exe",
-                @"%ProgramFiles(x86)%\Microsoft VS Code\Code.exe"
-            };
+        var candidates = new[]
+        {
+            @"%LOCALAPPDATA%\Programs\Microsoft VS Code\Code.exe",
+            @"%ProgramFiles%\Microsoft VS Code\Code.exe",
+            @"%ProgramFiles(x86)%\Microsoft VS Code\Code.exe"
+        };
 
         foreach (var candidate in candidates)
         {
-            var expanded = OperatingSystem.IsWindows()
-                ? Environment.ExpandEnvironmentVariables(candidate)
-                : candidate;
+            var expanded = Environment.ExpandEnvironmentVariables(candidate);
             if (File.Exists(expanded))
             {
                 Process.Start(new ProcessStartInfo(expanded, $"\"{path}\"") { UseShellExecute = true });
@@ -68,6 +67,31 @@ public static class ProcessLauncher
         }
 
         throw new InvalidOperationException("VSCode not found ('code' not on PATH)");
+    }
+
+    /// <summary>
+    /// macOS variant of <see cref="LaunchVSCode"/>. The `code` CLI lives in the user's
+    /// shell PATH (Homebrew, /usr/local/bin), which a GUI app launched from Finder does
+    /// not inherit. UseShellExecute=true also silently no-ops for a bare command that
+    /// isn't on PATH (it falls back to `open`) instead of throwing, so the try/catch
+    /// fallback above can't be relied on here. Launch the bundled `code` script directly,
+    /// then fall back to `code` resolved through the user's login shell.
+    /// </summary>
+    private static void LaunchVSCodeMac(string path)
+    {
+        const string bundledCode = "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code";
+        if (File.Exists(bundledCode))
+        {
+            var psi = new ProcessStartInfo(bundledCode) { UseShellExecute = false };
+            psi.ArgumentList.Add(path);
+            Process.Start(psi);
+            return;
+        }
+
+        var shell = new ProcessStartInfo("/bin/zsh") { UseShellExecute = false };
+        shell.ArgumentList.Add("-lc");
+        shell.ArgumentList.Add($"code \"{path}\"");
+        Process.Start(shell);
     }
 
     /// <summary>
@@ -120,13 +144,18 @@ public static class ProcessLauncher
 
         if (OperatingSystem.IsMacOS())
         {
-            Process.Start(new ProcessStartInfo
+            // Run through the user's login shell so the command resolves against their
+            // real PATH (Homebrew, /usr/local/bin), which a GUI app launched from Finder
+            // does not inherit. Pass the command as a single argument to avoid ambiguity
+            // in shell-quoting.
+            var psi = new ProcessStartInfo("/bin/zsh")
             {
-                FileName = "/bin/bash",
-                Arguments = $"-c \"{command}\"",
                 WorkingDirectory = path,
                 UseShellExecute = false
-            });
+            };
+            psi.ArgumentList.Add("-lc");
+            psi.ArgumentList.Add(command);
+            Process.Start(psi);
         }
         else
         {
@@ -163,8 +192,13 @@ public static class ProcessLauncher
             _ => "Terminal"
         };
 
-        // `open -a <app> <folder>` opens the app focused on that folder.
-        Process.Start(new ProcessStartInfo("open", $"-a {app} \"{path}\"") { UseShellExecute = true });
+        // `open -a <app> <folder>` opens the app focused on that folder. Use the full
+        // path and pass each argument individually so paths with spaces survive.
+        var psi = new ProcessStartInfo("/usr/bin/open") { UseShellExecute = false };
+        psi.ArgumentList.Add("-a");
+        psi.ArgumentList.Add(app);
+        psi.ArgumentList.Add(path);
+        Process.Start(psi);
     }
 
     private static void LaunchWindowsTerminal(string path)
