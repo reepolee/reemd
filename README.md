@@ -78,6 +78,35 @@ dotnet run --project Reemd.Avalonia
 ./deploy.sh
 ```
 
+## Run on macOS
+
+```bash
+git clone https://github.com/reepolee/reemd.git
+cd reemd
+```
+
+**Quick dev run** — keeps log output in the terminal (handy when debugging hotkeys):
+
+```bash
+dotnet run --project Reemd.Avalonia
+```
+
+**Self-contained build** — no `dotnet` needed afterward:
+
+```bash
+./build.sh publish osx-arm64     # Apple Silicon (use osx-x64 for Intel)
+./publish/osx-arm64/Reemd
+```
+
+**App bundle** — builds `Reemd.app`, installs to `~/Applications`, and launches:
+
+```bash
+./deploy.sh
+```
+
+> For troubleshooting, run the binary directly from a terminal (`./publish/osx-arm64/Reemd`)
+> rather than via `open`, so error output (e.g. `[Reemd] ...` lines) stays visible.
+
 ## Hotkeys
 
 ### Global (work from anywhere)
