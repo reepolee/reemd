@@ -38,11 +38,8 @@ public sealed class HotKeyService : IDisposable
     private const uint OPTION_KEY = 1u << 11;  // 2048
     private const uint CONTROL_KEY = 1u << 12; // 4096
 
-    // macOS virtual key codes (kVK_*)
-    private const uint VK_ANSI_A = 0x00;
-    private const uint VK_ANSI_1 = 0x12; // 18
-    private const uint VK_ANSI_0 = 0x1D; // 29
-    private const uint VK_SPACE = 0x31;  // 49
+    // macOS virtual key code (kVK_Space = 49)
+    private const uint VK_SPACE = 0x31;
 
     private const string CarbonLib = "/System/Library/Frameworks/Carbon.framework/Carbon";
     private const uint kEventClassKeyboard = 0x6B657962; // 'keyb'
@@ -162,29 +159,49 @@ public sealed class HotKeyService : IDisposable
     {
         EnsureMacHandler();
 
+        var target = GetApplicationEventTarget();
         foreach (var (id, name, modifiers, key) in _pending)
         {
             var kk = ToMacKeyCode(key);
             var mods = ToMacModifiers(modifiers);
 
             var hotKeyId = new EventHotKeyID { signature = kEventHotKeyIDSignature, id = (uint)id };
-            var status = RegisterEventHotKey(kk, mods, hotKeyId, GetEventDispatcherTarget(), 0, out var hotKeyRef);
+            var status = RegisterEventHotKey(kk, mods, hotKeyId, target, 0, out var hotKeyRef);
             if (status == 0 && hotKeyRef != IntPtr.Zero)
             {
                 _registeredNames[id] = name;
                 _macHotKeyRefs.Add(hotKeyRef);
             }
+            else
+            {
+                Console.Error.WriteLine($"[Reemd] RegisterEventHotKey '{name}' failed (key={kk}, mods={mods}, status={status})");
+            }
         }
     }
 
+    /// <summary>
+    /// Maps a key character to its macOS virtual key code (kVK_*). The kVK_ANSI_* values
+    /// follow physical key order on an ANSI keyboard, NOT alphabetical/sequential order,
+    /// so letters and digits each need an explicit table.
+    /// </summary>
     private static uint ToMacKeyCode(char key)
     {
         if (key == ' ') return VK_SPACE;
-        var upper = char.ToUpperInvariant(key);
-        if (upper >= '1' && upper <= '9') return VK_ANSI_1 + (uint)(upper - '1');
-        if (upper == '0') return VK_ANSI_0;
-        if (upper >= 'A' && upper <= 'Z') return VK_ANSI_A + (uint)(upper - 'A');
-        return VK_SPACE;
+
+        return char.ToUpperInvariant(key) switch
+        {
+            // Letters (kVK_ANSI_* in physical QWERTY order)
+            'A' => 0x00, 'B' => 0x0B, 'C' => 0x08, 'D' => 0x02, 'E' => 0x0E,
+            'F' => 0x03, 'G' => 0x05, 'H' => 0x04, 'I' => 0x22, 'J' => 0x26,
+            'K' => 0x28, 'L' => 0x25, 'M' => 0x2E, 'N' => 0x2D, 'O' => 0x1F,
+            'P' => 0x23, 'Q' => 0x0C, 'R' => 0x0F, 'S' => 0x01, 'T' => 0x11,
+            'U' => 0x20, 'V' => 0x09, 'W' => 0x0D, 'X' => 0x07, 'Y' => 0x10,
+            'Z' => 0x06,
+            // Digits (kVK_ANSI_* in physical order: 1,2,3,4,6,5,9,7,8,0)
+            '1' => 0x12, '2' => 0x13, '3' => 0x14, '4' => 0x15, '5' => 0x17,
+            '6' => 0x16, '7' => 0x1A, '8' => 0x1C, '9' => 0x19, '0' => 0x1D,
+            _ => VK_SPACE,
+        };
     }
 
     private static uint ToMacModifiers(HotKeyModifiers m)
@@ -207,7 +224,9 @@ public sealed class HotKeyService : IDisposable
         var eventType = new EventTypeSpec { eventClass = kEventClassKeyboard, eventKind = kEventHotKeyPressed };
         var types = new[] { eventType };
 
-        InstallEventHandler(GetEventDispatcherTarget(), _carbonHandlerDelegate, 1, types, IntPtr.Zero, out _carbonEventHandlerRef);
+        var status = InstallEventHandler(GetApplicationEventTarget(), _carbonHandlerDelegate, 1, types, IntPtr.Zero, out _carbonEventHandlerRef);
+        if (status != 0)
+            Console.Error.WriteLine($"[Reemd] InstallEventHandler failed (status={status})");
     }
 
     private static int CarbonHandler(IntPtr nextHandler, IntPtr theEvent, IntPtr userData)
@@ -349,7 +368,7 @@ public sealed class HotKeyService : IDisposable
     private static extern int UnregisterEventHotKey(IntPtr inHotKeyRef);
 
     [DllImport(CarbonLib)]
-    private static extern IntPtr GetEventDispatcherTarget();
+    private static extern IntPtr GetApplicationEventTarget();
 
     [DllImport(CarbonLib)]
     private static extern int InstallEventHandler(IntPtr inTarget, CarbonEventHandler inHandler,
