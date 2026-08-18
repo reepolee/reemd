@@ -161,9 +161,8 @@ public partial class MainWindow
         if (string.IsNullOrEmpty(searchText)) return;
 
         var currentPos = _findResults[_currentFindIndex];
-        var text = Editor.Text ?? string.Empty;
 
-        Editor.Text = text.Remove(currentPos, searchText.Length).Insert(currentPos, replaceText);
+        ReplaceRange(currentPos, searchText.Length, replaceText);
 
         DoFind();
 
@@ -205,7 +204,7 @@ public partial class MainWindow
 
         if (count > 0)
         {
-            Editor.Text = text;
+            ReplaceRange(0, Editor.Text?.Length ?? 0, text);
             Editor.Focus();
             SetStatus($"Replaced {count} occurrence(s)");
         }

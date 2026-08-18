@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using Avalonia.Interactivity;
 
 namespace Reemd;
@@ -8,7 +9,29 @@ namespace Reemd;
 /// </summary>
 public partial class MainWindow
 {
+    /// <summary>
+    /// Replaces the character range [start, start + length) with <paramref name="replacement"/>
+    /// through the TextBox text-input pipeline, so the change is recorded for undo/redo.
+    /// Assigning Editor.Text directly would clear the undo history instead.
+    /// </summary>
+    private void ReplaceRange(int start, int length, string replacement)
+    {
+        Editor.CaretIndex = start;
+        Editor.SelectionStart = start;
+        Editor.SelectionEnd = start + length;
+        Editor.SelectedText = replacement;
+    }
+
     #region Context Menu Handlers
+
+    private void EditorContextMenu_Opening(object? sender, CancelEventArgs e)
+    {
+        MenuUndo.IsEnabled = Editor.CanUndo;
+        MenuRedo.IsEnabled = Editor.CanRedo;
+    }
+
+    private void ContextMenu_Undo_Click(object? sender, RoutedEventArgs e) => Editor.Undo();
+    private void ContextMenu_Redo_Click(object? sender, RoutedEventArgs e) => Editor.Redo();
 
     private void ContextMenu_Cut_Click(object? sender, RoutedEventArgs e) => Editor.Cut();
     private void ContextMenu_Copy_Click(object? sender, RoutedEventArgs e) => Editor.Copy();
@@ -55,7 +78,7 @@ public partial class MainWindow
         string curSep = text.Substring(curSepStart, curSepLen);
         string after = text[(curSepStart + curSepLen)..];
 
-        Editor.Text = before + curContent + prevSep + prevContent + curSep + after;
+        ReplaceRange(0, text.Length, before + curContent + prevSep + prevContent + curSep + after);
 
         int relativeOffset = caretPos - curContentStart;
         Editor.CaretIndex = prevContentStart + relativeOffset;
@@ -93,7 +116,7 @@ public partial class MainWindow
         string nextSep = text.Substring(nextSepStart, nextSepLen);
         string after = text[(nextSepStart + nextSepLen)..];
 
-        Editor.Text = before + nextContent + curSep + curContent + nextSep + after;
+        ReplaceRange(0, text.Length, before + nextContent + curSep + curContent + nextSep + after);
 
         int relativeOffset = caretPos - curContentStart;
         Editor.CaretIndex = curContentStart + curSep.Length + nextContent.Length + relativeOffset;
@@ -140,23 +163,25 @@ public partial class MainWindow
 
     private void InsertMarkdownWrapper(string delimiter)
     {
-        var selStart = Editor.SelectionStart;
-        var selLen = Editor.SelectionEnd - Editor.SelectionStart;
         var text = Editor.Text ?? string.Empty;
+        var start = Math.Min(Editor.SelectionStart, Editor.SelectionEnd);
+        var end = Math.Max(Editor.SelectionStart, Editor.SelectionEnd);
+        var selLen = end - start;
 
         if (selLen > 0)
         {
-            var selected = text.Substring(selStart, selLen);
-            Editor.Text = text.Remove(selStart, selLen).Insert(selStart, $"{delimiter}{selected}{delimiter}");
-            Editor.SelectionStart = selStart;
-            Editor.SelectionEnd = selStart + selLen + delimiter.Length * 2;
+            var selected = text.Substring(start, selLen);
+            var replacement = $"{delimiter}{selected}{delimiter}";
+            ReplaceRange(start, selLen, replacement);
+            Editor.SelectionStart = start;
+            Editor.SelectionEnd = start + replacement.Length;
         }
         else
         {
             var placeholder = $"{delimiter}text{delimiter}";
-            Editor.Text = text.Insert(selStart, placeholder);
-            Editor.SelectionStart = selStart + delimiter.Length;
-            Editor.SelectionEnd = selStart + delimiter.Length + 4; // select "text"
+            ReplaceRange(start, 0, placeholder);
+            Editor.SelectionStart = start + delimiter.Length;
+            Editor.SelectionEnd = start + delimiter.Length + 4; // select "text"
         }
 
         Editor.Focus();
@@ -164,24 +189,25 @@ public partial class MainWindow
 
     private void InsertCodeBlock()
     {
-        var selStart = Editor.SelectionStart;
-        var selLen = Editor.SelectionEnd - Editor.SelectionStart;
         var text = Editor.Text ?? string.Empty;
+        var start = Math.Min(Editor.SelectionStart, Editor.SelectionEnd);
+        var end = Math.Max(Editor.SelectionStart, Editor.SelectionEnd);
+        var selLen = end - start;
 
         if (selLen > 0)
         {
-            var selected = text.Substring(selStart, selLen);
+            var selected = text.Substring(start, selLen);
             var replacement = $"```\n{selected}\n```";
-            Editor.Text = text.Remove(selStart, selLen).Insert(selStart, replacement);
-            Editor.SelectionStart = selStart;
-            Editor.SelectionEnd = selStart + replacement.Length;
+            ReplaceRange(start, selLen, replacement);
+            Editor.SelectionStart = start;
+            Editor.SelectionEnd = start + replacement.Length;
         }
         else
         {
             var replacement = "```\ncode\n```";
-            Editor.Text = text.Insert(selStart, replacement);
-            Editor.SelectionStart = selStart + 4;
-            Editor.SelectionEnd = selStart + 8;
+            ReplaceRange(start, 0, replacement);
+            Editor.SelectionStart = start + 4;
+            Editor.SelectionEnd = start + 8;
         }
 
         Editor.Focus();
@@ -189,24 +215,25 @@ public partial class MainWindow
 
     private void InsertLinkMarkdown()
     {
-        var selStart = Editor.SelectionStart;
-        var selLen = Editor.SelectionEnd - Editor.SelectionStart;
         var text = Editor.Text ?? string.Empty;
+        var start = Math.Min(Editor.SelectionStart, Editor.SelectionEnd);
+        var end = Math.Max(Editor.SelectionStart, Editor.SelectionEnd);
+        var selLen = end - start;
 
         if (selLen > 0)
         {
-            var selected = text.Substring(selStart, selLen);
+            var selected = text.Substring(start, selLen);
             var link = $"[{selected}](url)";
-            Editor.Text = text.Remove(selStart, selLen).Insert(selStart, link);
-            Editor.SelectionStart = selStart + selLen + 3;
-            Editor.SelectionEnd = selStart + selLen + 6; // select "url"
+            ReplaceRange(start, selLen, link);
+            Editor.SelectionStart = start + selLen + 3;
+            Editor.SelectionEnd = start + selLen + 6; // select "url"
         }
         else
         {
             var link = "[link text](url)";
-            Editor.Text = text.Insert(selStart, link);
-            Editor.SelectionStart = selStart + 1;
-            Editor.SelectionEnd = selStart + 10; // select "link text"
+            ReplaceRange(start, 0, link);
+            Editor.SelectionStart = start + 1;
+            Editor.SelectionEnd = start + 10; // select "link text"
         }
 
         Editor.Focus();

@@ -235,12 +235,16 @@
                                      BorderThickness="0"
                                      AcceptsTab="True"
                                      AcceptsReturn="True"
+                                     VerticalContentAlignment="Top"
                                      FontFamily="Cascadia Code, Menlo, Monaco, Consolas, monospace"
                                      FontSize="13"
                                      TextWrapping="NoWrap"
                                      TextChanged="Editor_TextChanged">
                                 <TextBox.ContextMenu>
-                                    <ContextMenu>
+                                    <ContextMenu Opening="EditorContextMenu_Opening">
+                                        <MenuItem x:Name="MenuUndo" Header="Undo (Ctrl+Z)" Click="ContextMenu_Undo_Click" />
+                                        <MenuItem x:Name="MenuRedo" Header="Redo (Ctrl+Y)" Click="ContextMenu_Redo_Click" />
+                                        <Separator />
                                         <MenuItem Header="Cut" Click="ContextMenu_Cut_Click" />
                                         <MenuItem Header="Copy" Click="ContextMenu_Copy_Click" />
                                         <MenuItem Header="Paste" Click="ContextMenu_Paste_Click" />

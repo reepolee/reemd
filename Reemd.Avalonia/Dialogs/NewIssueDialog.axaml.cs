@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.IO;
 using System.Text.Json;
 using Avalonia;
@@ -216,4 +217,21 @@ public partial class NewIssueDialog : Window
     {
         Close(false);
     }
+
+    #region Description Context Menu
+
+    private void DescriptionContextMenu_Opening(object? sender, CancelEventArgs e)
+    {
+        DescMenuUndo.IsEnabled = DescriptionTextBox.CanUndo;
+        DescMenuRedo.IsEnabled = DescriptionTextBox.CanRedo;
+    }
+
+    private void DescMenu_Undo_Click(object? sender, RoutedEventArgs e) => DescriptionTextBox.Undo();
+    private void DescMenu_Redo_Click(object? sender, RoutedEventArgs e) => DescriptionTextBox.Redo();
+    private void DescMenu_Cut_Click(object? sender, RoutedEventArgs e) => DescriptionTextBox.Cut();
+    private void DescMenu_Copy_Click(object? sender, RoutedEventArgs e) => DescriptionTextBox.Copy();
+    private void DescMenu_Paste_Click(object? sender, RoutedEventArgs e) => DescriptionTextBox.Paste();
+    private void DescMenu_SelectAll_Click(object? sender, RoutedEventArgs e) => DescriptionTextBox.SelectAll();
+
+    #endregion
 }

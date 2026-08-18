@@ -57,7 +57,20 @@
         <!-- Description -->
         <TextBlock Grid.Row="5" Text="Description:" Margin="0,0,0,2" VerticalAlignment="Top" />
         <TextBox x:Name="DescriptionTextBox" Grid.Row="5" Margin="0,20,0,8" Padding="4"
-                 AcceptsReturn="True" AcceptsTab="True" TextWrapping="Wrap" />
+                 AcceptsReturn="True" AcceptsTab="True" TextWrapping="Wrap"
+                 VerticalContentAlignment="Top">
+            <TextBox.ContextMenu>
+                <ContextMenu Opening="DescriptionContextMenu_Opening">
+                    <MenuItem x:Name="DescMenuUndo" Header="Undo (Ctrl+Z)" Click="DescMenu_Undo_Click" />
+                    <MenuItem x:Name="DescMenuRedo" Header="Redo (Ctrl+Y)" Click="DescMenu_Redo_Click" />
+                    <Separator />
+                    <MenuItem Header="Cut" Click="DescMenu_Cut_Click" />
+                    <MenuItem Header="Copy" Click="DescMenu_Copy_Click" />
+                    <MenuItem Header="Paste" Click="DescMenu_Paste_Click" />
+                    <MenuItem Header="Select All" Click="DescMenu_SelectAll_Click" />
+                </ContextMenu>
+            </TextBox.ContextMenu>
+        </TextBox>
 
         <!-- Status -->
         <TextBlock x:Name="StatusTextBlock" Grid.Row="6" Margin="0,0,0,8" TextWrapping="Wrap" />

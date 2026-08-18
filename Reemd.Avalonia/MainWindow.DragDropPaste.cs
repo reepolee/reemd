@@ -92,7 +92,7 @@ public partial class MainWindow
                 }
 
                 var insertion = string.Join("\n", lines) + "\n";
-                Editor.Text = text.Insert(dropIndex, insertion);
+                ReplaceRange(dropIndex, 0, insertion);
                 Editor.CaretIndex = dropIndex + insertion.Length;
                 SetStatus($"Inserted {imageFiles.Count} image(s)");
                 e.Handled = true;
@@ -109,7 +109,7 @@ public partial class MainWindow
         if (textToInsert != null && IsImageUrl(textToInsert))
         {
             var markdown = $"![Image]({textToInsert})";
-            Editor.Text = text.Insert(dropIndex, markdown);
+            ReplaceRange(dropIndex, 0, markdown);
             Editor.CaretIndex = dropIndex + markdown.Length;
             SetStatus("Inserted image from URL");
             e.Handled = true;
@@ -119,7 +119,7 @@ public partial class MainWindow
         // Non-image text — insert as plain text at drop position
         if (textToInsert != null)
         {
-            Editor.Text = text.Insert(dropIndex, textToInsert);
+            ReplaceRange(dropIndex, 0, textToInsert);
             Editor.CaretIndex = dropIndex + textToInsert.Length;
             SetStatus("Dropped text");
             e.Handled = true;
@@ -193,8 +193,7 @@ public partial class MainWindow
                     {
                         var markdown = $"![{Path.GetFileNameWithoutExtension(saved)}]({saved})";
                         var caretIndex = Editor.CaretIndex;
-                        var text = Editor.Text ?? string.Empty;
-                        Editor.Text = text.Insert(caretIndex, markdown);
+                        ReplaceRange(caretIndex, 0, markdown);
                         Editor.CaretIndex = caretIndex + markdown.Length;
 
                         _isLoadingDocument = true;
@@ -212,8 +211,7 @@ public partial class MainWindow
                 {
                     var markdown = $"![Image]({textFromClipboard.Trim()})";
                     var caretIndex = Editor.CaretIndex;
-                    var text = Editor.Text ?? string.Empty;
-                    Editor.Text = text.Insert(caretIndex, markdown);
+                    ReplaceRange(caretIndex, 0, markdown);
                     Editor.CaretIndex = caretIndex + markdown.Length;
                     SetStatus("Pasted image URL");
                     return;
@@ -242,8 +240,7 @@ public partial class MainWindow
                         }
                         var insertion = string.Join("\n", lines);
                         var caretIndex = Editor.CaretIndex;
-                        var text = Editor.Text ?? string.Empty;
-                        Editor.Text = text.Insert(caretIndex, insertion);
+                        ReplaceRange(caretIndex, 0, insertion);
                         Editor.CaretIndex = caretIndex + insertion.Length;
                         SetStatus($"Pasted {imageFiles.Count} image file(s)");
                         return;
