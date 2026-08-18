@@ -301,6 +301,17 @@ else
 fi
 
 # ──────────────────────────────────────────────
+# Clean up local build artifacts
+# ──────────────────────────────────────────────
+# The zips and staging dirs are now on the release, so drop the local copies.
+# This only runs after a successful upload — a failed release keeps $OUT
+# intact so it can be retried without rebuilding.
+
+echo ""
+echo "→ Removing local build artifacts ($OUT)..."
+rm -rf "$OUT"
+
+# ──────────────────────────────────────────────
 # Done
 # ──────────────────────────────────────────────
 
