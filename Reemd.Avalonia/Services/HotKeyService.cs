@@ -45,7 +45,7 @@ public sealed class HotKeyService : IDisposable
     private const uint kEventClassKeyboard = 0x6B657962; // 'keyb'
     private const uint kEventHotKeyPressed = 5;
     private const uint kEventParamDirectObject = 0x2D2D2D2D; // '----'
-    private const uint typeEventHotKeyID = 0x6B686964; // 'khid'
+    private const uint typeEventHotKeyID = 0x686B6964; // 'hkid'
     private const uint kEventHotKeyIDSignature = 0x7265656D; // 'reem'
 
     public event Action<string>? HotKeyPressed;
@@ -157,35 +157,25 @@ public sealed class HotKeyService : IDisposable
 
     private void RegisterMac()
     {
-        try
+        EnsureMacHandler();
+
+        var target = GetApplicationEventTarget();
+        foreach (var (id, name, modifiers, key) in _pending)
         {
-            EnsureMacHandler();
+            var kk = ToMacKeyCode(key);
+            var mods = ToMacModifiers(modifiers);
 
-            var target = GetApplicationEventTarget();
-            Console.Error.WriteLine($"[Reemd] Carbon target=0x{target.ToInt64():X}");
-
-            foreach (var (id, name, modifiers, key) in _pending)
+            var hotKeyId = new EventHotKeyID { signature = kEventHotKeyIDSignature, id = (uint)id };
+            var status = RegisterEventHotKey(kk, mods, hotKeyId, target, 0, out var hotKeyRef);
+            if (status == 0 && hotKeyRef != IntPtr.Zero)
             {
-                var kk = ToMacKeyCode(key);
-                var mods = ToMacModifiers(modifiers);
-
-                var hotKeyId = new EventHotKeyID { signature = kEventHotKeyIDSignature, id = (uint)id };
-                var status = RegisterEventHotKey(kk, mods, hotKeyId, target, 0, out var hotKeyRef);
-                if (status == 0 && hotKeyRef != IntPtr.Zero)
-                {
-                    _registeredNames[id] = name;
-                    _macHotKeyRefs.Add(hotKeyRef);
-                    Console.Error.WriteLine($"[Reemd] Registered '{name}' key=0x{kk:X} mods=0x{mods:X} id={id}");
-                }
-                else
-                {
-                    Console.Error.WriteLine($"[Reemd] RegisterEventHotKey '{name}' failed (key=0x{kk:X}, mods=0x{mods:X}, status={status})");
-                }
+                _registeredNames[id] = name;
+                _macHotKeyRefs.Add(hotKeyRef);
             }
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"[Reemd] macOS hotkey registration error: {ex}");
+            else
+            {
+                Console.Error.WriteLine($"[Reemd] RegisterEventHotKey '{name}' failed (key=0x{kk:X}, mods=0x{mods:X}, status={status})");
+            }
         }
     }
 
@@ -246,20 +236,19 @@ public sealed class HotKeyService : IDisposable
             var hotKeyId = default(EventHotKeyID);
             var status = GetEventParameter(theEvent, kEventParamDirectObject, typeEventHotKeyID, IntPtr.Zero,
                 (uint)Marshal.SizeOf<EventHotKeyID>(), IntPtr.Zero, ref hotKeyId);
+            if (status != 0) return 0;
 
             var id = (int)hotKeyId.id;
             var instance = _activeInstance;
-            Console.Error.WriteLine($"[Reemd] hotkey event id={id} (GetEventParameter status={status})");
-
             if (instance != null && instance._registeredNames.TryGetValue(id, out var name))
             {
                 var captured = name;
                 Dispatcher.UIThread.Post(() => instance.HotKeyPressed?.Invoke(captured));
             }
         }
-        catch (Exception ex)
+        catch
         {
-            Console.Error.WriteLine($"[Reemd] CarbonHandler error: {ex}");
+            // Best-effort — never crash the run loop
         }
         return 0; // noErr
     }
