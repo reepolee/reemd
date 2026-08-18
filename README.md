@@ -17,8 +17,41 @@ sync, and system-wide hotkeys. Built on [.NET 9](https://dotnet.microsoft.com/) 
 
 ## Requirements
 
-- [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
-- [`gh` CLI](https://cli.github.com/) — for GitHub sync and the New Issue dialog
+### .NET 9 SDK
+
+The project pins the .NET 9 SDK (`global.json` → `9.0.316`, `rollForward: latestFeature`),
+so install a `9.0.x` SDK — any `9.0.x` build satisfies it.
+
+**macOS (Homebrew):**
+
+```bash
+brew install --cask dotnet-sdk@9
+```
+
+Open a new terminal, then verify:
+
+```bash
+dotnet --version   # should print 9.0.x
+```
+
+**macOS (no Homebrew):**
+
+```bash
+curl -sSL https://dot.net/v1/dotnet-install.sh | bash /dev/stdin --channel 9.0
+export PATH="$PATH:$HOME/.dotnet:$HOME/.dotnet/tools"
+dotnet --version
+```
+
+**Windows:** install from <https://dotnet.microsoft.com/download/dotnet/9.0>, or
+`winget install Microsoft.DotNet.SDK.9`.
+
+> If `dotnet` is installed but "not found", restart the terminal or run `source ~/.zshrc`
+> (macOS) so the updated `PATH` is picked up.
+
+### `gh` CLI
+
+Used for GitHub sync and the New Issue dialog. macOS: `brew install gh`; Windows:
+`winget install GitHub.cli`. Then run `gh auth login`.
 
 ## Build & run
 
