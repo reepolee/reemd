@@ -13,7 +13,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-APP_NAME="Reemd"
+APP_NAME="ReeMD"
 EXECUTABLE="Reemd"
 
 ARCH=""

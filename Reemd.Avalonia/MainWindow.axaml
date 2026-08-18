@@ -4,7 +4,7 @@
         xmlns:conv="clr-namespace:Reemd"
         x:Class="Reemd.MainWindow"
         x:CompileBindings="False"
-        Title="Reemd - Markdown Editor"
+        Title="ReeMD - Markdown Editor"
         Width="1100" Height="700"
         MinWidth="700" MinHeight="400"
         Closing="Window_Closing">

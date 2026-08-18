@@ -18,6 +18,8 @@ public partial class App : Application
 
     public override void Initialize()
     {
+        // Shown in the macOS app menu / Dock and other OS chrome.
+        Name = "ReeMD";
         AvaloniaXamlLoader.Load(this);
     }
 
@@ -52,7 +54,7 @@ public partial class App : Application
     {
         _trayIcon = new TrayIcon
         {
-            ToolTipText = "Reemd - Markdown Editor",
+            ToolTipText = "ReeMD - Markdown Editor",
             IsVisible = true
         };
 
