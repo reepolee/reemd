@@ -1,7 +1,7 @@
 # Reemd
 
 A fast, cross-platform Markdown editor with live preview, folder browsing, GitHub
-sync, and system-wide hotkeys. Built on [.NET 9](https://dotnet.microsoft.com/) and
+sync, and system-wide hotkeys. Built on [.NET 10](https://dotnet.microsoft.com/) and
 [Avalonia UI](https://avaloniaui.net/) — runs on **Windows** and **macOS**.
 
 ## Features
@@ -40,33 +40,33 @@ user `PATH`. Override the location with `$env:INSTALL_DIR = "…"` first.
 
 ## Requirements
 
-### .NET 9 SDK
+### .NET 10 SDK
 
-The project pins the .NET 9 SDK (`global.json` → `9.0.316`, `rollForward: latestFeature`),
-so install a `9.0.x` SDK — any `9.0.x` build satisfies it.
+The project pins the .NET 10 SDK (`global.json` → `10.0.400`, `rollForward: latestFeature`),
+so install a `10.0.x` SDK — any `10.0.x` build satisfies it.
 
 **macOS (Homebrew):**
 
 ```bash
-brew install --cask dotnet-sdk@9
+brew install --cask dotnet-sdk@10
 ```
 
 Open a new terminal, then verify:
 
 ```bash
-dotnet --version   # should print 9.0.x
+dotnet --version   # should print 10.0.x
 ```
 
 **macOS (no Homebrew):**
 
 ```bash
-curl -sSL https://dot.net/v1/dotnet-install.sh | bash /dev/stdin --channel 9.0
+curl -sSL https://dot.net/v1/dotnet-install.sh | bash /dev/stdin --channel 10.0
 export PATH="$PATH:$HOME/.dotnet:$HOME/.dotnet/tools"
 dotnet --version
 ```
 
-**Windows:** install from <https://dotnet.microsoft.com/download/dotnet/9.0>, or
-`winget install Microsoft.DotNet.SDK.9`.
+**Windows:** install from <https://dotnet.microsoft.com/download/dotnet/10.0>, or
+`winget install Microsoft.DotNet.SDK.10`.
 
 > If `dotnet` is installed but "not found", restart the terminal or run `source ~/.zshrc`
 > (macOS) so the updated `PATH` is picked up.

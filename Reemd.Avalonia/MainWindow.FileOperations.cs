@@ -91,21 +91,18 @@ public partial class MainWindow
             await File.WriteAllTextAsync(_currentFilePath, markdown);
             _fileContentCache[_currentFilePath] = markdown;
 
-            _isDirty = false;
-            UpdateSavedIndicator(true);
-            ScheduleGitHubSync();
+        _isDirty = false;
+        UpdateSavedIndicator(true);
+        ScheduleGitHubSync();
 
-            // Refresh file list to re-sort by last write time — suppress
-            // SelectionChanged so we don't re-load the same file unnecessarily.
-            _isLoadingDocument = true;
-            RefreshFileList();
-            _isLoadingDocument = false;
-        }
-        catch (Exception ex)
-        {
-            SetStatus($"Save error: {ex.Message}");
-            UpdateSavedIndicator(false);
-        }
+        // No list refresh needed after our own save: the list is alphabetical and
+        // FileWatcher_FileChanged skips reloads of our own writes anyway.
+    }
+    catch (Exception ex)
+    {
+        SetStatus($"Save error: {ex.Message}");
+        UpdateSavedIndicator(false);
+    }
     }
 
     private async Task AutoSaveCurrentFileAsync()
@@ -234,12 +231,7 @@ public partial class MainWindow
 
         var sorted = _fileList
             .OrderByDescending(f => f.IsPinned ? 1 : 0)
-            .ThenByDescending(f =>
-            {
-                var fullPath = Path.Combine(_markdownFolder, f.Name);
-                try { return File.GetLastWriteTime(fullPath); }
-                catch { return DateTime.MinValue; }
-            })
+            .ThenBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
         _fileList.Clear();

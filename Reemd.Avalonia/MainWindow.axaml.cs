@@ -8,6 +8,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using Reemd.Models;
 using Reemd.Services;
+using SukiUI.Controls;
 
 namespace Reemd;
 
@@ -16,7 +17,7 @@ namespace Reemd;
 /// Manages file browsing, raw markdown editing, live preview, auto-save, and GitHub sync.
 /// Broken into partial files by feature area (see MainWindow.*.cs).
 /// </summary>
-public partial class MainWindow : Window
+public partial class MainWindow : SukiWindow
 {
     private readonly MarkdownConverter _markdownConverter = new();
     private readonly GitHubService _gitHubService = new();
@@ -84,6 +85,17 @@ public partial class MainWindow : Window
     public MainWindow(string? startupFolder)
     {
         InitializeComponent();
+
+        // SukiWindow's theme sets BorderOnly on macOS, which drops the native
+        // traffic-light buttons (no closable/miniaturizable style mask). Prefer the
+        // native macOS title bar there so the familiar close/minimize/zoom buttons
+        // stay visible; Windows/Linux keep SukiWindow's custom drawn chrome.
+        if (OperatingSystem.IsMacOS())
+        {
+            WindowDecorations = WindowDecorations.Full;
+            ExtendClientAreaToDecorationsHint = false;
+            IsTitleBarVisible = false;
+        }
 
         FileListBox.ItemsSource = _fileList;
         _autoSaveTimer.Tick += AutoSaveTimer_Tick;
@@ -163,11 +175,13 @@ public partial class MainWindow : Window
         AddHandler(InputElement.KeyDownEvent, MainWindow_PreviewKeyDown, RoutingStrategies.Tunnel);
         AddHandler(InputElement.PointerWheelChangedEvent, Window_PointerWheel, RoutingStrategies.Tunnel);
 
-        // Editor-level keyboard shortcuts and drag-drop (tunneling so paste is intercepted)
+        // Editor-level keyboard shortcuts (tunnel so paste is intercepted) and drag-drop.
+        // DragOver/Drop are registered as Bubble-only routed events, so they must be
+        // subscribed with Bubble — a Tunnel subscription would never fire.
         Editor.AddHandler(InputElement.KeyDownEvent, Editor_KeyDown, RoutingStrategies.Tunnel);
         DragDrop.SetAllowDrop(Editor, true);
-        Editor.AddHandler(DragDrop.DragOverEvent, Editor_DragOver, RoutingStrategies.Tunnel);
-        Editor.AddHandler(DragDrop.DropEvent, Editor_Drop, RoutingStrategies.Tunnel);
+        Editor.AddHandler(DragDrop.DragOverEvent, Editor_DragOver, RoutingStrategies.Bubble);
+        Editor.AddHandler(DragDrop.DropEvent, Editor_Drop, RoutingStrategies.Bubble);
 
         // Sync on focus — refreshes 'Last sync' time when returning to the app
         Activated += (_, _) => ScheduleGitHubSync();

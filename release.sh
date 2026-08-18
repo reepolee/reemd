@@ -2,7 +2,7 @@
 # Release script — builds ALL platform executables from a single machine and
 # publishes them as one GitHub Release.
 #
-# ReeMD is a .NET 9 (Avalonia) app, so cross-compilation is native to the SDK:
+# ReeMD is a .NET 10 (Avalonia) app, so cross-compilation is native to the SDK:
 # one `dotnet publish` per RID produces each platform's executable. No extra
 # linkers are needed (unlike the Rust toolchain in reettier, which needs Zig +
 # xwin).
@@ -17,7 +17,7 @@
 #   --force  Release the current version even if it is ahead of the tag
 #
 # Prerequisites (one-time, on the release machine):
-#   .NET 9 SDK  → https://dotnet.microsoft.com/download/dotnet/9.0
+#   .NET 10 SDK  → https://dotnet.microsoft.com/download/dotnet/10.0
 #   gh CLI authenticated → `gh auth login`
 #   zip (macOS ships it; `brew install zip` if missing)
 

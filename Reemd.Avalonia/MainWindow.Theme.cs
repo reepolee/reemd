@@ -1,5 +1,8 @@
+using Avalonia;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Styling;
+using SukiUI;
 
 namespace Reemd;
 
@@ -17,11 +20,46 @@ public partial class MainWindow
         SetStatus(_isDarkMode ? "Dark theme" : "Light theme");
     }
 
+    /// <summary>
+    /// Switches SukiUI's base theme (Dark/Light) and falls back to setting the
+    /// window variant directly if the SukiTheme isn't available yet.
+    /// </summary>
+    private void ApplySukiBaseTheme(bool dark)
+    {
+        var variant = dark ? ThemeVariant.Dark : ThemeVariant.Light;
+        var app = Application.Current;
+        if (app == null)
+        {
+            RequestedThemeVariant = variant;
+            return;
+        }
+
+        try
+        {
+            // Switch SukiUI's base theme (this also refreshes its color resources).
+            SukiTheme.GetInstance(app).ChangeBaseTheme(variant);
+        }
+        catch
+        {
+            // Fall back if SukiTheme isn't registered.
+        }
+
+        // Always force our persisted flag to win over the OS theme ("Default"), so a
+        // later OS theme change can't desync the themed controls from our colors.
+        app.RequestedThemeVariant = variant;
+    }
+
     private void ApplyTheme()
     {
+        // SukiUI owns the window background; drive its base theme (and every themed
+        // control, including dialogs) from our persisted dark-mode flag.
+        ApplySukiBaseTheme(_isDarkMode);
+
         if (_isDarkMode)
         {
-            Background = new SolidColorBrush(Color.FromRgb(0x1E, 0x1E, 0x1E));
+            // Toolbar
+            ToolbarBorder.Background = new SolidColorBrush(Color.FromRgb(0x25, 0x25, 0x26));
+            ToolbarBorder.BorderBrush = new SolidColorBrush(Color.FromRgb(0x3C, 0x3C, 0x3C));
 
             // Sidebar
             SidebarBorder.Background = new SolidColorBrush(Color.FromRgb(0x25, 0x25, 0x26));
@@ -79,7 +117,9 @@ public partial class MainWindow
         }
         else
         {
-            Background = new SolidColorBrush(Colors.White);
+            // Toolbar
+            ToolbarBorder.Background = new SolidColorBrush(Color.FromRgb(0xF6, 0xF6, 0xF6));
+            ToolbarBorder.BorderBrush = new SolidColorBrush(Color.FromRgb(0xD0, 0xD0, 0xD0));
 
             // Sidebar
             SidebarBorder.Background = new SolidColorBrush(Color.FromRgb(0xF5, 0xF5, 0xF5));

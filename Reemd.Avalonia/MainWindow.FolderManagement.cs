@@ -18,6 +18,9 @@ public partial class MainWindow
 {
     #region Folder Management
 
+    /// <summary>Last observed last-write time per file, used to ignore spurious watcher events.</summary>
+    private readonly Dictionary<string, DateTime> _fileMtimes = [];
+
     private void LoadMarkdownFolder(string folderPath)
     {
         try
@@ -54,7 +57,7 @@ public partial class MainWindow
 
             var files = Directory.GetFiles(_markdownFolder, Config.MarkdownFilter)
                 .OrderByDescending(f => _pinnedFilenames.Contains(Path.GetFileName(f)) ? 1 : 0)
-                .ThenByDescending(f => File.GetLastWriteTime(f))
+                .ThenBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
             foreach (var file in files)
@@ -66,6 +69,7 @@ public partial class MainWindow
                     IsPinned = _pinnedFilenames.Contains(fileName)
                 });
                 _cursorPositions[file] = new CursorPosition(0, 0, 0);
+                _fileMtimes[file] = File.GetLastWriteTime(file);
             }
 
             UpdateFileCount();
@@ -119,19 +123,39 @@ public partial class MainWindow
     {
         Dispatcher.UIThread.Post(() =>
         {
-            RefreshFileList();
-
-            if (_currentFilePath != null &&
-                !_isDirty &&
-                string.Equals(e.FullPath, _currentFilePath, StringComparison.OrdinalIgnoreCase))
+            try
             {
-                // Content matches cache = our own save; skip reload to preserve Undo history.
+                var mtime = File.GetLastWriteTime(e.FullPath);
+
+                // macOS FSEvents reports atime/metadata touches as "Changed" even
+                // when the file content and mtime are untouched (e.g. when we merely
+                // read it). Only act when the last-write time actually moved.
+                if (_fileMtimes.TryGetValue(e.FullPath, out var last) && last == mtime)
+                    return;
+
+                _fileMtimes[e.FullPath] = mtime;
+
+                // Our own save: disk content matches what we last cached — skip the
+                // reload to preserve undo history.
                 if (_fileContentCache.TryGetValue(e.FullPath, out var cached) &&
                     cached == File.ReadAllText(e.FullPath))
                     return;
 
-                SetStatus($"Reloaded: {Path.GetFileName(_currentFilePath)} (externally modified)");
-                LoadFile(_currentFilePath);
+                RefreshFileList();
+
+                // External change: reload the current file if we have no unsaved edits.
+                if (_currentFilePath != null &&
+                    !_isDirty &&
+                    string.Equals(e.FullPath, _currentFilePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    SetStatus($"Reloaded: {Path.GetFileName(_currentFilePath)} (externally modified)");
+                    LoadFile(_currentFilePath);
+                }
+            }
+            catch
+            {
+                // Best-effort — if anything above failed, still refresh the list.
+                RefreshFileList();
             }
         });
     }
@@ -149,7 +173,7 @@ public partial class MainWindow
 
             var orderedFiles = Directory.GetFiles(_markdownFolder, Config.MarkdownFilter)
                 .OrderByDescending(f => _pinnedFilenames.Contains(Path.GetFileName(f)) ? 1 : 0)
-                .ThenByDescending(f => File.GetLastWriteTime(f))
+                .ThenBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
             _fileList.Clear();
@@ -163,6 +187,7 @@ public partial class MainWindow
                 });
                 if (!_cursorPositions.ContainsKey(file))
                     _cursorPositions[file] = new CursorPosition(0, 0, 0);
+                _fileMtimes[file] = File.GetLastWriteTime(file);
             }
 
             UpdateFileCount();
