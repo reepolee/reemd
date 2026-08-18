@@ -25,13 +25,18 @@ Install the latest release without cloning or building:
 curl -fsSL https://raw.githubusercontent.com/reepolee/reemd/main/install.sh | bash
 ```
 
-Downloads the latest `ReeMD.app` bundle, installs it to `~/Applications`, and
+Downloads the latest `ReeMD.app` bundle, installs it to `/Applications`, and
 launches it. Override the location with `INSTALL_DIR`, e.g.
-`INSTALL_DIR=/Applications curl -fsSL … | bash`.
+`INSTALL_DIR=$HOME/Applications curl -fsSL … | bash`.
 
-**Windows:** download `Reemd-windows-*.zip` from the
-[latest release](https://github.com/reepolee/reemd/releases/latest), or build with
-`./build.ps1 -Release -Publish`.
+**Windows:**
+
+```powershell
+irm https://raw.githubusercontent.com/reepolee/reemd/main/install.ps1 | iex
+```
+
+Downloads the latest `Reemd.exe`, installs it to `~/bin`, and adds that to your
+user `PATH`. Override the location with `$env:INSTALL_DIR = "…"` first.
 
 ## Requirements
 
@@ -116,7 +121,7 @@ dotnet run --project Reemd.Avalonia
 ./publish/osx-arm64/Reemd
 ```
 
-**App bundle** — builds `Reemd.app`, installs to `~/Applications`, and launches:
+**App bundle** — builds `ReeMD.app`, installs to `/Applications`, and launches:
 
 ```bash
 ./deploy.sh

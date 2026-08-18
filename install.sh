@@ -8,7 +8,7 @@ APP="Reemd"
 BUNDLE="ReeMD"
 OWNER="reepolee"
 REPO="reemd"
-INSTALL_DIR="${INSTALL_DIR:-$HOME/Applications}"
+INSTALL_DIR="${INSTALL_DIR:-/Applications}"
 
 # ──────────────────────────────────────────────
 # Detect platform

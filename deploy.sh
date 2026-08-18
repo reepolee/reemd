@@ -2,13 +2,13 @@
 # Deploy Reemd to macOS:
 #   1. Publish a self-contained build for the host architecture (or --arch).
 #   2. Bundle the publish output into a proper Reemd.app (Info.plist + optional icon).
-#   3. Install to ~/Applications (default) or /Applications (--system, needs sudo).
+#   3. Install to /Applications (default); use --system to force sudo.
 #   4. Launch the app (skip with --no-run).
 #
 # Usage:
 #   ./deploy.sh               # auto-detect Apple Silicon / Intel
 #   ./deploy.sh --arch x64    # force Intel build
-#   ./deploy.sh --system      # install to /Applications
+#   ./deploy.sh --system      # force sudo when writing /Applications
 #   ./deploy.sh --no-run      # don't launch after installing
 set -euo pipefail
 
@@ -109,7 +109,7 @@ if [ "$SYSTEM" -eq 1 ]; then
   sudo rm -rf "$INSTALL_DIR/$APP_NAME.app"
   sudo cp -R "$BUNDLE" "$INSTALL_DIR/"
 else
-  INSTALL_DIR="$HOME/Applications"
+  INSTALL_DIR="/Applications"
   mkdir -p "$INSTALL_DIR"
   rm -rf "$INSTALL_DIR/$APP_NAME.app"
   cp -R "$BUNDLE" "$INSTALL_DIR/"

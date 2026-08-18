@@ -194,6 +194,10 @@ for entry in "${targets[@]}"; do
 		-p:DebugType=none \
 		-p:DebugSymbols=false
 
+	# Native runtime packages (SkiaSharp, HarfBuzz) ship their own .pdb debug
+	# symbols that DebugType=none doesn't strip; they roughly double the zip.
+	find "$OUT/$rid" -name '*.pdb' -delete
+
 	zip_file="$base.zip"
 
 	if [[ "$rid" == win-* ]]; then
