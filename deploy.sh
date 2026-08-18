@@ -81,7 +81,7 @@ cat > "$CONTENTS/Info.plist" <<EOF
     <key>CFBundleDisplayName</key>
     <string>$APP_NAME</string>
     <key>CFBundleIdentifier</key>
-    <string>com.reemd.app</string>
+    <string>com.reepolee.reemd</string>
     <key>CFBundleVersion</key>
     <string>1.0.0</string>
     <key>CFBundleShortVersionString</key>
@@ -106,6 +106,7 @@ EOF
 if [ "$SYSTEM" -eq 1 ]; then
   INSTALL_DIR="/Applications"
   echo "Installing to /Applications (may prompt for password)..."
+  sudo rm -rf "$INSTALL_DIR/$APP_NAME.app"
   sudo cp -R "$BUNDLE" "$INSTALL_DIR/"
 else
   INSTALL_DIR="$HOME/Applications"

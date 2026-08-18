@@ -15,6 +15,24 @@ sync, and system-wide hotkeys. Built on [.NET 9](https://dotnet.microsoft.com/) 
 - **Live preview extras** — GitHub-flavored Markdown (Markdig), syntax-highlighted code blocks, and inline local images (drag-drop or paste).
 - **Find & replace**, word-wrap toggle, dark/light theme, and per-panel font sizing.
 
+## Install
+
+Install the latest release without cloning or building:
+
+**macOS:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/reepolee/reemd/main/install.sh | bash
+```
+
+Downloads the latest `ReeMD.app` bundle, installs it to `~/Applications`, and
+launches it. Override the location with `INSTALL_DIR`, e.g.
+`INSTALL_DIR=/Applications curl -fsSL … | bash`.
+
+**Windows:** download `Reemd-windows-*.zip` from the
+[latest release](https://github.com/reepolee/reemd/releases/latest), or build with
+`./build.ps1 -Release -Publish`.
+
 ## Requirements
 
 ### .NET 9 SDK
