@@ -184,20 +184,49 @@ public static class ProcessLauncher
         };
     }
 
+    /// <summary>
+    /// Opens Terminal.app or iTerm in the given folder. `open -a <app> <folder>` only
+    /// launches the app — neither Terminal.app nor iTerm honors the folder argument as a
+    /// working directory, so both would start in the user's home folder. Drive the app
+    /// with AppleScript instead: `do script` for Terminal.app, `create window` + `write
+    /// text` for iTerm. The folder is passed to osascript as an argument and shell-quoted
+    /// with `quoted form of`, so spaces and quotes in the path survive.
+    /// </summary>
     private static void LaunchMacTerminal(string path, string? terminal)
     {
-        var app = terminal switch
-        {
-            "ITerm" => "iTerm",
-            _ => "Terminal"
-        };
+        var script = string.Equals(terminal, "ITerm", StringComparison.OrdinalIgnoreCase)
+            ? ITermCdScript
+            : TerminalCdScript;
+        RunOsascript(script, path);
+    }
 
-        // `open -a <app> <folder>` opens the app focused on that folder. Use the full
-        // path and pass each argument individually so paths with spaces survive.
-        var psi = new ProcessStartInfo("/usr/bin/open") { UseShellExecute = false };
-        psi.ArgumentList.Add("-a");
-        psi.ArgumentList.Add(app);
-        psi.ArgumentList.Add(path);
+    private const string TerminalCdScript =
+        "on run argv\n" +
+        "  set cmd to \"cd \" & (quoted form of (item 1 of argv))\n" +
+        "  tell application \"Terminal\"\n" +
+        "    activate\n" +
+        "    do script cmd\n" +
+        "  end tell\n" +
+        "end run";
+
+    private const string ITermCdScript =
+        "on run argv\n" +
+        "  set cmd to \"cd \" & (quoted form of (item 1 of argv))\n" +
+        "  tell application \"iTerm\"\n" +
+        "    activate\n" +
+        "    set newWindow to (create window with default profile)\n" +
+        "    tell current session of newWindow\n" +
+        "      write text cmd\n" +
+        "    end tell\n" +
+        "  end tell\n" +
+        "end run";
+
+    private static void RunOsascript(string script, string argument)
+    {
+        var psi = new ProcessStartInfo("/usr/bin/osascript") { UseShellExecute = false };
+        psi.ArgumentList.Add("-e");
+        psi.ArgumentList.Add(script);
+        psi.ArgumentList.Add(argument);
         Process.Start(psi);
     }
 
