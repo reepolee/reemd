@@ -74,6 +74,8 @@ public partial class MainWindow : Window
     private bool IsEditorFocused =>
         ReferenceEquals(TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement(), Editor);
 
+    internal bool IsDarkMode => _isDarkMode;
+
     // Parameterless ctor required by the Avalonia XAML compiler (never used at runtime).
     public MainWindow() : this(null)
     {

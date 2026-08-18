@@ -1,0 +1,46 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Reemd.Dialogs.AboutDialog"
+        x:CompileBindings="False"
+        Title="About ReeMD"
+        Width="420" Height="400"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        FontSize="14">
+    <Grid Margin="24,20" RowDefinitions="Auto,Auto,Auto,Auto,Auto,*">
+
+        <!-- App icon, drawn from icon.svg so it's crisp at any size -->
+        <Viewbox Grid.Row="0" Width="96" Height="96" HorizontalAlignment="Center">
+            <Canvas Width="270" Height="270">
+                <Ellipse Width="270" Height="270" Fill="#B40000" />
+                <Path Fill="White"
+                      Data="M 67 101 C 67 82.2223 82.2223 67 101 67 H 135 V 169 C 135 187.778 119.778 203 101 203 H 67 V 101 Z" />
+                <Path Fill="White" Opacity="0.5"
+                      Data="M 135 67 H 169 C 187.778 67 203 82.2223 203 101 V 101 C 203 119.778 187.778 135 169 135 V 135 C 150.222 135 135 119.778 135 101 V 67 Z" />
+            </Canvas>
+        </Viewbox>
+
+        <TextBlock Grid.Row="1" Text="ReeMD" FontSize="30" FontWeight="Bold"
+                   HorizontalAlignment="Center" Margin="0,14,0,0" />
+
+        <TextBlock x:Name="VersionText" Grid.Row="2" FontSize="13"
+                   Foreground="#888888" HorizontalAlignment="Center" Margin="0,4,0,0" />
+
+        <TextBlock Grid.Row="3" HorizontalAlignment="Center" TextAlignment="Center"
+                   TextWrapping="Wrap" Margin="0,14,0,0"
+                   Text="A fast, offline-first Markdown editor for Windows and macOS." />
+
+        <StackPanel Grid.Row="4" HorizontalAlignment="Center" Margin="0,14,0,0">
+            <TextBlock Text="© 2026 Reepolee" HorizontalAlignment="Center" Foreground="#888888" />
+            <TextBlock x:Name="SourceLink" Text="github.com/reepolee/reemd"
+                       HorizontalAlignment="Center" Margin="0,6,0,0"
+                       Foreground="#1E88E5" TextDecorations="Underline" Cursor="Hand"
+                       Tapped="SourceLink_Tapped" />
+        </StackPanel>
+
+        <Button x:Name="BtnClose" Grid.Row="5" Content="Close" IsDefault="True" IsCancel="True"
+                Padding="24,4" HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                Click="BtnClose_Click" />
+    </Grid>
+</Window>

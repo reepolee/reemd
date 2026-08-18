@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media.Imaging;
+using Reemd.Dialogs;
 using Reemd.Services;
 
 namespace Reemd;
@@ -21,6 +22,37 @@ public partial class App : Application
         // Shown in the macOS app menu / Dock and other OS chrome.
         Name = "ReeMD";
         AvaloniaXamlLoader.Load(this);
+        SetupAppMenu();
+    }
+
+    /// <summary>
+    /// Defines the macOS application menu. Without this, Avalonia shows a default
+    /// "About Avalonia" item; defining our own brands it as ReeMD and lets us show
+    /// a custom About dialog. Avalonia appends the standard "Quit ReeMD" item.
+    /// </summary>
+    private void SetupAppMenu()
+    {
+        var menu = new NativeMenu();
+
+        var aboutItem = new NativeMenuItem { Header = "About ReeMD..." };
+        aboutItem.Click += (_, _) => ShowAboutDialog();
+        menu.Items.Add(aboutItem);
+
+        NativeMenu.SetMenu(this, menu);
+    }
+
+    private void ShowAboutDialog()
+    {
+        var dialog = new AboutDialog(_mainWindow?.IsDarkMode ?? false);
+
+        if (_mainWindow != null)
+        {
+            dialog.ShowDialog(_mainWindow);
+        }
+        else
+        {
+            dialog.Show();
+        }
     }
 
     public override void OnFrameworkInitializationCompleted()
