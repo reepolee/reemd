@@ -268,45 +268,52 @@ public sealed class GitHubService
     }
 
     /// <summary>
-    /// Runs an arbitrary process asynchronously and returns the exit code, stdout, and stderr.
-    /// When stdinInput is provided, it is written to the process's standard input and closed,
-    /// so the child process (e.g. `gh ... --body-file -`) can read it.
+    /// Runs an arbitrary process on a background thread and returns the exit code, stdout,
+    /// and stderr. When stdinInput is provided, it is written to the process's standard input
+    /// and closed, so the child process (e.g. `gh ... --body-file -`) can read it.
     /// </summary>
-    private static async Task<(int ExitCode, string StdOut, string StdErr)> RunProcessAsync(string fileName, string arguments, int timeoutSeconds, string? stdinInput = null)
+    private static Task<(int ExitCode, string StdOut, string StdErr)> RunProcessAsync(string fileName, string arguments, int timeoutSeconds, string? stdinInput = null)
     {
-        var psi = new ProcessStartInfo
+        return Task.Run(async () =>
         {
-            FileName = fileName,
-            Arguments = arguments,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            RedirectStandardInput = stdinInput != null,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
+            var psi = new ProcessStartInfo
+            {
+                FileName = fileName,
+                Arguments = arguments,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                RedirectStandardInput = stdinInput != null,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
 
-        using var process = new Process { StartInfo = psi };
-        process.Start();
+            using var process = new Process { StartInfo = psi };
+            process.Start();
 
-        if (stdinInput != null)
-        {
-            await process.StandardInput.WriteAsync(stdinInput);
-            process.StandardInput.Close();
-        }
+            if (stdinInput != null)
+            {
+                await process.StandardInput.WriteAsync(stdinInput);
+                process.StandardInput.Close();
+            }
 
-        var stdoutTask = process.StandardOutput.ReadToEndAsync();
-        var stderrTask = process.StandardError.ReadToEndAsync();
+            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
 
-        var completed = process.WaitForExit(timeoutSeconds * 1000);
-        if (!completed)
-        {
-            process.Kill();
-            return (-1, string.Empty, $"Command timed out after {timeoutSeconds}s");
-        }
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
+            try
+            {
+                await process.WaitForExitAsync(timeoutCts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                try { process.Kill(entireProcessTree: true); } catch { }
+                return (-1, string.Empty, $"Command timed out after {timeoutSeconds}s");
+            }
 
-        var stdout = await stdoutTask;
-        var stderr = await stderrTask;
+            var stdout = await stdoutTask;
+            var stderr = await stderrTask;
 
-        return (process.ExitCode, stdout ?? string.Empty, stderr ?? string.Empty);
+            return (process.ExitCode, stdout ?? string.Empty, stderr ?? string.Empty);
+        });
     }
 }

@@ -24,6 +24,9 @@ public partial class MainWindow
 
     #region GitHub Sync
 
+    /// <summary>True while a GitHub sync (pull + commit + push) is running.</summary>
+    private bool _isSyncing;
+
     /// <summary>
     /// Schedules a GitHub sync 15 seconds after the last save.
     /// </summary>
@@ -34,6 +37,30 @@ public partial class MainWindow
     }
 
     private async void GitHubSyncTimer_Tick(object? sender, EventArgs e)
+    {
+        if (_currentFilePath == null) return;
+
+        // If a sync is already running, re-arm the timer so a follow-up sync runs
+        // after the current one finishes — never run concurrent git commands.
+        if (_isSyncing)
+        {
+            _gitHubSyncTimer.Stop();
+            _gitHubSyncTimer.Start();
+            return;
+        }
+
+        _isSyncing = true;
+        try
+        {
+            await RunGitHubSyncAsync();
+        }
+        finally
+        {
+            _isSyncing = false;
+        }
+    }
+
+    private async Task RunGitHubSyncAsync()
     {
         if (_currentFilePath == null) return;
 

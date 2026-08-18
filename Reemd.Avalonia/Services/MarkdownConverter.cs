@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -16,6 +17,11 @@ public sealed class MarkdownConverter
     private static string? _githubCssLight;
     private static string? _githubCssDark;
     private static readonly object _cacheLock = new();
+
+    // Caches inlined image data URIs keyed by file path, invalidated when the file's
+    // last-write time or size changes, so repeated renders don't re-read and re-encode
+    // large images on the UI thread.
+    private static readonly ConcurrentDictionary<string, (DateTime LastWriteUtc, long Length, string DataUri)> ImageCache = new();
 
     // Matches src="..." or src='...' so local image paths can be inlined as data URIs.
     private static readonly Regex ImageSrcRegex = new(
@@ -118,15 +124,28 @@ public sealed class MarkdownConverter
                     ? cleaned
                     : Path.Combine(imageFolder, cleaned.Replace('/', Path.DirectorySeparatorChar));
 
-                if (!File.Exists(fullPath))
+                var fileInfo = new FileInfo(fullPath);
+                if (!fileInfo.Exists)
                     return match.Value;
 
-                var mime = GetMimeType(Path.GetExtension(fullPath));
+                var mime = GetMimeType(fileInfo.Extension);
                 if (mime == null)
                     return match.Value;
 
+                var lastWriteUtc = fileInfo.LastWriteTimeUtc;
+                var length = fileInfo.Length;
+
+                if (ImageCache.TryGetValue(fullPath, out var cached) &&
+                    cached.LastWriteUtc == lastWriteUtc &&
+                    cached.Length == length)
+                {
+                    return $"src=\"{cached.DataUri}\"";
+                }
+
                 var base64 = Convert.ToBase64String(File.ReadAllBytes(fullPath));
-                return $"src=\"data:{mime};base64,{base64}\"";
+                var dataUri = $"data:{mime};base64,{base64}";
+                ImageCache[fullPath] = (lastWriteUtc, length, dataUri);
+                return $"src=\"{dataUri}\"";
             }
             catch
             {
