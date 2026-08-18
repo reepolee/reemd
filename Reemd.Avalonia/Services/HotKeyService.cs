@@ -157,25 +157,35 @@ public sealed class HotKeyService : IDisposable
 
     private void RegisterMac()
     {
-        EnsureMacHandler();
-
-        var target = GetApplicationEventTarget();
-        foreach (var (id, name, modifiers, key) in _pending)
+        try
         {
-            var kk = ToMacKeyCode(key);
-            var mods = ToMacModifiers(modifiers);
+            EnsureMacHandler();
 
-            var hotKeyId = new EventHotKeyID { signature = kEventHotKeyIDSignature, id = (uint)id };
-            var status = RegisterEventHotKey(kk, mods, hotKeyId, target, 0, out var hotKeyRef);
-            if (status == 0 && hotKeyRef != IntPtr.Zero)
+            var target = GetApplicationEventTarget();
+            Console.Error.WriteLine($"[Reemd] Carbon target=0x{target.ToInt64():X}");
+
+            foreach (var (id, name, modifiers, key) in _pending)
             {
-                _registeredNames[id] = name;
-                _macHotKeyRefs.Add(hotKeyRef);
+                var kk = ToMacKeyCode(key);
+                var mods = ToMacModifiers(modifiers);
+
+                var hotKeyId = new EventHotKeyID { signature = kEventHotKeyIDSignature, id = (uint)id };
+                var status = RegisterEventHotKey(kk, mods, hotKeyId, target, 0, out var hotKeyRef);
+                if (status == 0 && hotKeyRef != IntPtr.Zero)
+                {
+                    _registeredNames[id] = name;
+                    _macHotKeyRefs.Add(hotKeyRef);
+                    Console.Error.WriteLine($"[Reemd] Registered '{name}' key=0x{kk:X} mods=0x{mods:X} id={id}");
+                }
+                else
+                {
+                    Console.Error.WriteLine($"[Reemd] RegisterEventHotKey '{name}' failed (key=0x{kk:X}, mods=0x{mods:X}, status={status})");
+                }
             }
-            else
-            {
-                Console.Error.WriteLine($"[Reemd] RegisterEventHotKey '{name}' failed (key={kk}, mods={mods}, status={status})");
-            }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Reemd] macOS hotkey registration error: {ex}");
         }
     }
 
@@ -234,20 +244,22 @@ public sealed class HotKeyService : IDisposable
         try
         {
             var hotKeyId = default(EventHotKeyID);
-            GetEventParameter(theEvent, kEventParamDirectObject, typeEventHotKeyID, IntPtr.Zero,
+            var status = GetEventParameter(theEvent, kEventParamDirectObject, typeEventHotKeyID, IntPtr.Zero,
                 (uint)Marshal.SizeOf<EventHotKeyID>(), IntPtr.Zero, ref hotKeyId);
 
             var id = (int)hotKeyId.id;
             var instance = _activeInstance;
+            Console.Error.WriteLine($"[Reemd] hotkey event id={id} (GetEventParameter status={status})");
+
             if (instance != null && instance._registeredNames.TryGetValue(id, out var name))
             {
                 var captured = name;
                 Dispatcher.UIThread.Post(() => instance.HotKeyPressed?.Invoke(captured));
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Best-effort — never crash the run loop
+            Console.Error.WriteLine($"[Reemd] CarbonHandler error: {ex}");
         }
         return 0; // noErr
     }
