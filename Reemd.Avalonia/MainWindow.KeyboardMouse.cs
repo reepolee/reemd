@@ -137,16 +137,6 @@ public partial class MainWindow
             return;
         }
 
-        // Ctrl+Alt+I — open New GitHub Issue dialog
-        if ((e.KeyModifiers & KeyModifiers.Control) != 0 &&
-            (e.KeyModifiers & KeyModifiers.Alt) != 0 &&
-            e.Key == Key.I)
-        {
-            OpenNewIssueDialog();
-            e.Handled = true;
-            return;
-        }
-
         // Ctrl+Plus/Minus/0 (no Shift) — context-sensitive: font of the active panel
         if (e.KeyModifiers == KeyModifiers.Control)
         {
