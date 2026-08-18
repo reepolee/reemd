@@ -20,6 +20,7 @@ public sealed class HotKeyService : IDisposable
     private readonly Dictionary<int, string> _registeredNames = new();
     private HwndSource? _source;
     private int _nextId = 1;
+    private bool _hookAdded;
 
     public event Action<string>? HotKeyPressed;
 
@@ -35,6 +36,22 @@ public sealed class HotKeyService : IDisposable
     public void AddHotKey(string name, uint modifiers, uint virtualKey)
     {
         _pendingHotKeys.Add((_nextId++, name, modifiers, virtualKey));
+    }
+
+    /// <summary>
+    /// Unregisters all currently-registered hotkeys and clears the pending queue,
+    /// so a fresh set can be added and re-registered via Register().
+    /// </summary>
+    public void Reset()
+    {
+        if (_source != null)
+        {
+            foreach (var id in _registeredNames.Keys)
+                UnregisterHotKey(_source.Handle, id);
+        }
+        _registeredNames.Clear();
+        _pendingHotKeys.Clear();
+        _nextId = 1;
     }
 
     public void Register()
@@ -77,7 +94,11 @@ public sealed class HotKeyService : IDisposable
             }
         }
 
-        _source.AddHook(WndProc);
+        if (!_hookAdded)
+        {
+            _source.AddHook(WndProc);
+            _hookAdded = true;
+        }
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -105,5 +126,6 @@ public sealed class HotKeyService : IDisposable
             _source.RemoveHook(WndProc);
             _registeredNames.Clear();
         }
+        _hookAdded = false;
     }
 }

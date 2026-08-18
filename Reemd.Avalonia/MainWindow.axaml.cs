@@ -1,12 +1,11 @@
 using System.Collections.ObjectModel;
 using System.IO;
-using System.Text.Json;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Threading;
-using Microsoft.Web.WebView2.Core;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Media;
+using Avalonia.Threading;
 using Reemd.Models;
 using Reemd.Services;
 
@@ -19,8 +18,6 @@ namespace Reemd;
 /// </summary>
 public partial class MainWindow : Window
 {
-
-
     private readonly MarkdownConverter _markdownConverter = new();
     private readonly GitHubService _gitHubService = new();
 
@@ -71,40 +68,35 @@ public partial class MainWindow : Window
     private string _projectHotkeyToken = ProjectHotkey.DefaultToken;
     private string? _pendingPreviewHtml;
     private DateTime? _lastSyncTime;
-    private bool IsEditorFocused => Keyboard.FocusedElement == Editor;
     private string? _pendingLastFile;
     private readonly Dictionary<string, CursorPosition> _loadedCursorPositions = [];
 
-    public MainWindow(string? startupFolder = null)
+    private bool IsEditorFocused =>
+        ReferenceEquals(TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement(), Editor);
+
+    // Parameterless ctor required by the Avalonia XAML compiler (never used at runtime).
+    public MainWindow() : this(null)
+    {
+    }
+
+    public MainWindow(string? startupFolder)
     {
         InitializeComponent();
 
-        // Set window icon from embedded resource (works with PublishSingleFile)
-        try
-        {
-            var assembly = System.Reflection.Assembly.GetExecutingAssembly();
-            using var stream = assembly.GetManifestResourceStream("Reemd.icon.ico");
-            if (stream != null)
-            {
-                using var icon = new System.Drawing.Icon(stream);
-                Icon = System.Windows.Interop.Imaging.CreateBitmapSourceFromHIcon(
-                    icon.Handle,
-                    System.Windows.Int32Rect.Empty,
-                    System.Windows.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
-            }
-        }
-        catch
-        {
-            // Window icon is best-effort
-        }
         FileListBox.ItemsSource = _fileList;
         _autoSaveTimer.Tick += AutoSaveTimer_Tick;
         _previewTimer.Tick += PreviewTimer_Tick;
         _gitHubSyncTimer.Tick += GitHubSyncTimer_Tick;
 
-        // Wire events BEFORE loading anything — ensures NavigationCompleted doesn't get missed
+        // Update cursor-position status whenever the caret or selection moves
+        // (Avalonia TextBox has no SelectionChanged event, so observe caret/pointer/key events).
+        Editor.AddHandler(InputElement.KeyUpEvent, (_, _) => UpdateCursorPositionText());
+        Editor.AddHandler(InputElement.PointerReleasedEvent, (_, _) => UpdateCursorPositionText());
+
+        // Wire preview events BEFORE loading anything so the first render isn't missed.
         Preview.NavigationCompleted += Preview_NavigationCompleted;
-        Preview.CoreWebView2InitializationCompleted += Preview_CoreWebView2InitializationCompleted;
+        Preview.AdapterCreated += (_, _) => OnPreviewAdapterCreated();
+        Preview.WebMessageReceived += OnPreviewWebMessageReceived;
 
         // Load settings first — restores window position, column widths, saved font sizes, etc.
         LoadSettings();
@@ -161,30 +153,30 @@ public partial class MainWindow : Window
 
         // Wire scroll sync after controls are loaded
         Editor.Loaded += OnEditorLoaded;
-        Preview.Loaded += OnPreviewLoaded;
 
         // Force preview font sync once after the window first loads
-        RoutedEventHandler onLoaded = null!;
-        onLoaded = (_, _) =>
-        {
-            this.Loaded -= onLoaded;
-            ApplyPreviewFontSize();
-        };
-        this.Loaded += onLoaded;
+        Loaded += OnWindowLoaded;
 
-        // Window-level keyboard/mouse handlers — fire before tunneling to focused control
-        this.PreviewKeyDown += MainWindow_PreviewKeyDown;
-        this.PreviewMouseWheel += Window_PreviewMouseWheel;
+        // Window-level keyboard/mouse handlers — tunnel so they fire before focused control
+        AddHandler(InputElement.KeyDownEvent, MainWindow_PreviewKeyDown, RoutingStrategies.Tunnel);
+        AddHandler(InputElement.PointerWheelChangedEvent, Window_PointerWheel, RoutingStrategies.Tunnel);
+
+        // Editor-level keyboard shortcuts and drag-drop (tunneling so paste is intercepted)
+        Editor.AddHandler(InputElement.KeyDownEvent, Editor_KeyDown, RoutingStrategies.Tunnel);
+        DragDrop.SetAllowDrop(Editor, true);
+        Editor.AddHandler(DragDrop.DragOverEvent, Editor_DragOver, RoutingStrategies.Tunnel);
+        Editor.AddHandler(DragDrop.DropEvent, Editor_Drop, RoutingStrategies.Tunnel);
 
         // Sync on focus — refreshes 'Last sync' time when returning to the app
-        this.Activated += (_, _) => ScheduleGitHubSync();
-
-        // Intercept paste at the command level — catches Ctrl+V, right-click paste, Shift+Insert
-        Editor.CommandBindings.Add(new CommandBinding(
-            ApplicationCommands.Paste,
-            (_, e) => HandlePaste(e)));
+        Activated += (_, _) => ScheduleGitHubSync();
 
         _ = CheckGitHubAuthAsync();
+    }
+
+    private void OnWindowLoaded(object? sender, RoutedEventArgs e)
+    {
+        Loaded -= OnWindowLoaded;
+        ApplyPreviewFontSize();
     }
 
     #region Cursor Position Memory
@@ -196,7 +188,7 @@ public partial class MainWindow : Window
             _cursorPositions[filePath] = new CursorPosition(
                 Editor.CaretIndex,
                 Editor.SelectionStart,
-                Editor.SelectionLength);
+                Editor.SelectionEnd - Editor.SelectionStart);
         }
         catch
         {
@@ -209,10 +201,11 @@ public partial class MainWindow : Window
 
         try
         {
-            var textLen = Editor.Text.Length;
+            var textLen = Editor.Text?.Length ?? 0;
             Editor.CaretIndex = Math.Min(pos.CaretIndex, textLen);
-            Editor.SelectionStart = Math.Min(pos.SelectionStart, textLen);
-            Editor.SelectionLength = Math.Min(pos.SelectionLength, textLen - Editor.SelectionStart);
+            var selStart = Math.Min(pos.SelectionStart, textLen);
+            Editor.SelectionEnd = Math.Min(selStart + pos.SelectionLength, textLen);
+            Editor.SelectionStart = selStart;
         }
         catch
         {
@@ -227,8 +220,9 @@ public partial class MainWindow : Window
 
         try
         {
+            var text = Editor.Text ?? string.Empty;
             int caretIndex = Editor.CaretIndex;
-            var textBefore = Editor.Text.AsSpan(0, Math.Min(caretIndex, Editor.Text.Length));
+            var textBefore = text.AsSpan(0, Math.Min(caretIndex, text.Length));
             int line = 1;
             int col = 1;
             for (int i = 0; i < textBefore.Length; i++)
@@ -272,7 +266,7 @@ public partial class MainWindow : Window
         Close();
     }
 
-    private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
+    private void Window_Closing(object? sender, WindowClosingEventArgs e)
     {
         if (_forceClose)
             return;
@@ -296,8 +290,8 @@ public partial class MainWindow : Window
         {
             SaveCursorPosition(_currentFilePath);
 
-            File.WriteAllText(_currentFilePath, Editor.Text);
-            _fileContentCache[_currentFilePath] = Editor.Text;
+            File.WriteAllText(_currentFilePath, Editor.Text ?? string.Empty);
+            _fileContentCache[_currentFilePath] = Editor.Text ?? string.Empty;
 
             _isDirty = false;
             UpdateSavedIndicator(true);

@@ -1,0 +1,72 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Reemd.Dialogs.NewIssueDialog"
+        x:CompileBindings="False"
+        Title="New GitHub Issue"
+        Width="520" Height="700"
+        MinWidth="420" MinHeight="360"
+        WindowStartupLocation="CenterOwner"
+        CanResize="True"
+        ShowInTaskbar="False"
+        FontSize="14">
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Repo row -->
+        <Grid Grid.Row="0" Margin="0,0,0,8" ColumnDefinitions="Auto,*,Auto">
+            <TextBlock Grid.Column="0" Text="Repo:" VerticalAlignment="Center" Margin="0,0,6,0" />
+            <ComboBox x:Name="RepoCombo" Grid.Column="1" VerticalContentAlignment="Center" />
+            <Button x:Name="BtnReload" Grid.Column="2" Content="Reload" Margin="6,0,0,0"
+                    Padding="8,2" Click="BtnReload_Click" />
+        </Grid>
+
+        <!-- Title row -->
+        <TextBlock Grid.Row="1" Text="Title:" Margin="0,0,0,2" />
+        <TextBox x:Name="TitleTextBox" Grid.Row="2" Margin="0,0,0,8" Padding="4" />
+
+        <!-- Labels -->
+        <TextBlock Grid.Row="3" Text="Labels:" Margin="0,0,0,2" />
+        <ItemsControl x:Name="LabelsList" Grid.Row="4" Margin="0,0,0,8">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <WrapPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}" Margin="0,0,10,4" VerticalContentAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                            <Border Background="{Binding ColorBrush}" Width="10" Height="10"
+                                    CornerRadius="2" Margin="0,0,5,0" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </CheckBox>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- Description -->
+        <TextBlock Grid.Row="5" Text="Description:" Margin="0,0,0,2" VerticalAlignment="Top" />
+        <TextBox x:Name="DescriptionTextBox" Grid.Row="5" Margin="0,20,0,8" Padding="4"
+                 AcceptsReturn="True" AcceptsTab="True" TextWrapping="Wrap" />
+
+        <!-- Status -->
+        <TextBlock x:Name="StatusTextBlock" Grid.Row="6" Margin="0,0,0,8" TextWrapping="Wrap" />
+
+        <!-- Buttons -->
+        <StackPanel Grid.Row="7" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="6">
+            <Button x:Name="BtnSubmit" Content="Create Issue" IsDefault="True" Padding="10,4"
+                    Click="BtnSubmit_Click" />
+            <Button x:Name="BtnCancel" Content="Cancel" IsCancel="True" Padding="10,4" Click="BtnCancel_Click" />
+        </StackPanel>
+    </Grid>
+</Window>

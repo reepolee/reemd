@@ -31,8 +31,8 @@ param(
     [switch]$NoBuild
 )
 
-$ProjectDir = Join-Path $PSScriptRoot "reemd"
-$ProjectFile = Join-Path $ProjectDir "reemd.csproj"
+$ProjectDir = Join-Path $PSScriptRoot "Reemd.Avalonia"
+$ProjectFile = Join-Path $ProjectDir "Reemd.csproj"
 $Configuration = if ($Release) { "Release" } else { "Debug" }
 
 # ── Kill any running instance ──────────────────────────────────────────────

@@ -1,7 +1,5 @@
-using System.Collections.Generic;
 using System.IO;
-using System.Windows;
-using System.Windows.Controls;
+using Avalonia.Controls;
 using Reemd.Models;
 
 namespace Reemd;
@@ -58,13 +56,13 @@ public partial class MainWindow
                         if (bool.TryParse(parts[1].Trim(), out var m)) _savedMaximized = m;
                         break;
                     case "FileListColumnWidth":
-                        TryRestoreColumnWidth(FileListColumn, parts[1].Trim());
+                        TryRestoreColumnWidth(MainContentGrid.ColumnDefinitions[0], parts[1].Trim());
                         break;
                     case "EditorColumnWidth":
-                        TryRestoreColumnWidth(EditorColumn, parts[1].Trim());
+                        TryRestoreColumnWidth(EditorPreviewGrid.ColumnDefinitions[0], parts[1].Trim());
                         break;
                     case "PreviewColumnWidth":
-                        TryRestoreColumnWidth(PreviewColumn, parts[1].Trim());
+                        TryRestoreColumnWidth(EditorPreviewGrid.ColumnDefinitions[2], parts[1].Trim());
                         break;
                     case "ScrollRatio":
                         var scrollData = parts[1].Trim().Split('|');
@@ -102,8 +100,8 @@ public partial class MainWindow
 
     private void SaveWindowPosition()
     {
-        _savedLeft = Left;
-        _savedTop = Top;
+        _savedLeft = Position.X;
+        _savedTop = Position.Y;
         _savedWidth = Width;
         _savedHeight = Height;
         _savedMaximized = WindowState == WindowState.Maximized;
@@ -134,9 +132,9 @@ public partial class MainWindow
                 $"WindowWidth={_savedWidth}",
                 $"WindowHeight={_savedHeight}",
                 $"WindowMaximized={_savedMaximized}",
-                $"FileListColumnWidth={FileListColumn.Width}",
-                $"EditorColumnWidth={EditorColumn.Width}",
-                $"PreviewColumnWidth={PreviewColumn.Width}",
+                $"FileListColumnWidth={MainContentGrid.ColumnDefinitions[0].Width}",
+                $"EditorColumnWidth={EditorPreviewGrid.ColumnDefinitions[0].Width}",
+                $"PreviewColumnWidth={EditorPreviewGrid.ColumnDefinitions[2].Width}",
                 $"EditorFontSize={_editorFontSize.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
                 $"PreviewFontSize={_previewFontSize.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
                 $"DarkMode={_isDarkMode}",
@@ -144,13 +142,11 @@ public partial class MainWindow
                 $"ProjectHotkeyModifiers={_projectHotkeyToken}",
             };
 
-            // Save scroll ratios
             foreach (var kvp in _scrollRatios)
             {
                 lines.Add($"ScrollRatio={kvp.Key}|{kvp.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
             }
 
-            // Save cursor positions
             foreach (var kvp in _cursorPositions)
             {
                 var pos = kvp.Value;
@@ -170,8 +166,7 @@ public partial class MainWindow
         if (!double.IsNaN(_savedLeft))
         {
             WindowStartupLocation = WindowStartupLocation.Manual;
-            Left = _savedLeft;
-            Top = _savedTop;
+            Position = new Avalonia.PixelPoint((int)_savedLeft, (int)_savedTop);
             Width = _savedWidth;
             Height = _savedHeight;
 
@@ -184,7 +179,7 @@ public partial class MainWindow
     /// Tries to parse a saved column width value and assign it to the given ColumnDefinition.
     /// Supports star sizes (e.g. "2*"), "Auto", and explicit pixel values (e.g. "250" or "250px").
     /// </summary>
-    private static void TryRestoreColumnWidth(System.Windows.Controls.ColumnDefinition column, string value)
+    private static void TryRestoreColumnWidth(ColumnDefinition column, string value)
     {
         try
         {
@@ -192,7 +187,7 @@ public partial class MainWindow
 
             if (trimmed.Equals("Auto", StringComparison.OrdinalIgnoreCase))
             {
-                column.Width = System.Windows.GridLength.Auto;
+                column.Width = GridLength.Auto;
                 return;
             }
 
@@ -201,7 +196,7 @@ public partial class MainWindow
                 var starValue = trimmed[..^1];
                 if (double.TryParse(starValue, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var starSize))
                 {
-                    column.Width = new System.Windows.GridLength(starSize, System.Windows.GridUnitType.Star);
+                    column.Width = new GridLength(starSize, GridUnitType.Star);
                     return;
                 }
             }
@@ -211,7 +206,7 @@ public partial class MainWindow
 
             if (double.TryParse(trimmed, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var pixelSize))
             {
-                column.Width = new System.Windows.GridLength(pixelSize, System.Windows.GridUnitType.Pixel);
+                column.Width = new GridLength(pixelSize, GridUnitType.Pixel);
             }
         }
         catch

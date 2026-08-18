@@ -1,6 +1,7 @@
-using System.Windows;
-using System.Windows.Input;
-using System.Windows.Threading;
+using Avalonia;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Threading;
 
 namespace Reemd;
 
@@ -12,17 +13,17 @@ public partial class MainWindow
 {
     #region Keyboard & Mouse Shortcuts
 
-    private async void BtnPull_Click(object sender, RoutedEventArgs e)
+    private async void BtnPull_Click(object? sender, RoutedEventArgs e)
     {
         await ForcePullAsync();
     }
 
-    private void BtnScrollTop_Click(object sender, RoutedEventArgs e)
+    private void BtnScrollTop_Click(object? sender, RoutedEventArgs e)
     {
         ScrollEditorToTop();
     }
 
-    private void BtnScrollBottom_Click(object sender, RoutedEventArgs e)
+    private void BtnScrollBottom_Click(object? sender, RoutedEventArgs e)
     {
         ScrollEditorToBottom();
     }
@@ -30,38 +31,32 @@ public partial class MainWindow
     private void ScrollEditorToTop()
     {
         Editor.CaretIndex = 0;
-        Editor.ScrollToHome();
         if (_editorScrollViewer != null)
-        {
-            _editorScrollViewer.ScrollToTop();
-        }
-        Dispatcher.BeginInvoke(SyncEditorToPreview, DispatcherPriority.Background);
+            _editorScrollViewer.Offset = new Vector(_editorScrollViewer.Offset.X, 0);
+        Dispatcher.UIThread.Post(SyncEditorToPreview, DispatcherPriority.Background);
     }
 
     private void ScrollEditorToBottom()
     {
-        Editor.CaretIndex = Editor.Text.Length;
-        Editor.ScrollToEnd();
+        Editor.CaretIndex = Editor.Text?.Length ?? 0;
         if (_editorScrollViewer != null)
-        {
-            _editorScrollViewer.ScrollToBottom();
-        }
-        Dispatcher.BeginInvoke(SyncEditorToPreview, DispatcherPriority.Background);
+            _editorScrollViewer.Offset = new Vector(_editorScrollViewer.Offset.X, ScrollableHeight(_editorScrollViewer));
+        Dispatcher.UIThread.Post(SyncEditorToPreview, DispatcherPriority.Background);
     }
 
     /// <summary>
-    /// Fires before the event tunnels to the focused/under-mouse control.
+    /// Fires before the event reaches the focused control.
     /// Ctrl+Scroll over a panel = that panel's font (position-based).
     /// Ctrl+Shift+Scroll = opposite panel's font.
     /// </summary>
-    private void Window_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    private void Window_PointerWheel(object? sender, PointerWheelEventArgs e)
     {
         // Ctrl+Shift+Scroll -> force the OPPOSITE panel's font
-        if (Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
+        if (e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift))
         {
             if (IsEditorFocused)
             {
-                _previewFontSize = e.Delta > 0
+                _previewFontSize = e.Delta.Y > 0
                     ? Math.Min(_previewFontSize + 1, 48)
                     : Math.Max(_previewFontSize - 1, 8);
                 ApplyPreviewFontSize();
@@ -69,7 +64,7 @@ public partial class MainWindow
             }
             else
             {
-                _editorFontSize = e.Delta > 0
+                _editorFontSize = e.Delta.Y > 0
                     ? Math.Min(_editorFontSize + 1, 48)
                     : Math.Max(_editorFontSize - 1, 8);
                 ApplyEditorFontSize();
@@ -79,23 +74,22 @@ public partial class MainWindow
         }
 
         // Ctrl+Scroll -> context-sensitive by mouse position
-        if (Keyboard.Modifiers == ModifierKeys.Control)
+        if (e.KeyModifiers == KeyModifiers.Control)
         {
-            var pos = Mouse.GetPosition(Editor);
-            bool overEditor = pos.X >= 0 && pos.Y >= 0 && pos.X < Editor.ActualWidth && pos.Y < Editor.ActualHeight;
+            var pos = e.GetPosition(Editor);
+            bool overEditor = pos.X >= 0 && pos.Y >= 0 &&
+                              pos.X < Editor.Bounds.Width && pos.Y < Editor.Bounds.Height;
 
             if (overEditor)
             {
-                // Over editor -> change editor font
-                _editorFontSize = e.Delta > 0
+                _editorFontSize = e.Delta.Y > 0
                     ? Math.Min(_editorFontSize + 1, 48)
                     : Math.Max(_editorFontSize - 1, 8);
                 ApplyEditorFontSize();
             }
             else
             {
-                // Over preview (or anywhere else) -> change preview font
-                _previewFontSize = e.Delta > 0
+                _previewFontSize = e.Delta.Y > 0
                     ? Math.Min(_previewFontSize + 1, 48)
                     : Math.Max(_previewFontSize - 1, 8);
                 ApplyPreviewFontSize();
@@ -106,30 +100,27 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// Window-level handler for keyboard shortcuts — fires before tunneling reaches
-    /// the focused control (TextBox or WebView2). Handles Alt+Z for word wrap and
-    /// Ctrl+Shift+Plus/Minus/0 for preview font size, even when WebView2 has focus.
+    /// Window-level (tunneling) handler for keyboard shortcuts — fires before the focused
+    /// control (TextBox or WebView). Handles word wrap, force pull, new issue, and font
+    /// size shortcuts even when the WebView has focus.
     /// </summary>
     private void MainWindow_PreviewKeyDown(object? sender, KeyEventArgs e)
     {
         // Number keys 1-9 — trigger the matching project shortcut button.
         // Only fires when not typing in a text box, so numbers still type normally.
-        if (Keyboard.Modifiers == ModifierKeys.None &&
-            (e.Key >= Key.D1 && e.Key <= Key.D9 ||
-             e.Key >= Key.NumPad1 && e.Key <= Key.NumPad9))
+        if (e.KeyModifiers == KeyModifiers.None)
         {
-            if (!IsTypingInTextBox())
+            var digitIndex = DigitIndex(e.Key);
+            if (digitIndex >= 0 && !IsTypingInTextBox())
             {
-                HandleProjectHotKey(e.Key);
+                LaunchProjectByIndex(digitIndex);
                 e.Handled = true;
                 return;
             }
         }
 
         // Alt+Z — toggle word wrap
-        // When Alt is held, WPF reports e.Key = Key.System and e.SystemKey = actual key.
-        if ((Keyboard.IsKeyDown(Key.LeftAlt) || Keyboard.IsKeyDown(Key.RightAlt)) &&
-            (e.Key == Key.Z || e.SystemKey == Key.Z))
+        if ((e.KeyModifiers & KeyModifiers.Alt) != 0 && e.Key == Key.Z)
         {
             ToggleWordWrap();
             e.Handled = true;
@@ -137,8 +128,8 @@ public partial class MainWindow
         }
 
         // Ctrl+Shift+P — force git pull
-        if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control &&
-            (Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift &&
+        if ((e.KeyModifiers & KeyModifiers.Control) != 0 &&
+            (e.KeyModifiers & KeyModifiers.Shift) != 0 &&
             e.Key == Key.P)
         {
             _ = ForcePullAsync();
@@ -147,8 +138,8 @@ public partial class MainWindow
         }
 
         // Ctrl+Alt+I — open New GitHub Issue dialog
-        if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control &&
-            (Keyboard.Modifiers & ModifierKeys.Alt) == ModifierKeys.Alt &&
+        if ((e.KeyModifiers & KeyModifiers.Control) != 0 &&
+            (e.KeyModifiers & KeyModifiers.Alt) != 0 &&
             e.Key == Key.I)
         {
             OpenNewIssueDialog();
@@ -157,7 +148,7 @@ public partial class MainWindow
         }
 
         // Ctrl+Plus/Minus/0 (no Shift) — context-sensitive: font of the active panel
-        if (Keyboard.Modifiers == ModifierKeys.Control)
+        if (e.KeyModifiers == KeyModifiers.Control)
         {
             switch (e.Key)
             {
@@ -210,8 +201,8 @@ public partial class MainWindow
         }
 
         // Ctrl+Shift+Plus/Minus/0 — forces the OPPOSITE panel's font
-        if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control &&
-            (Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift)
+        if ((e.KeyModifiers & KeyModifiers.Control) != 0 &&
+            (e.KeyModifiers & KeyModifiers.Shift) != 0)
         {
             switch (e.Key)
             {
@@ -264,13 +255,19 @@ public partial class MainWindow
         }
     }
 
-    private void Editor_PreviewKeyDown(object sender, KeyEventArgs e)
+    private void Editor_KeyDown(object? sender, KeyEventArgs e)
     {
+        // Intercept paste so we can handle clipboard images/URLs first.
+        if ((e.KeyModifiers == KeyModifiers.Control && e.Key == Key.V) ||
+            (e.Key == Key.Insert && (e.KeyModifiers & KeyModifiers.Shift) != 0))
+        {
+            HandlePaste();
+            e.Handled = true;
+            return;
+        }
+
         // Alt+Z — toggle word wrap
-        // When Alt is held, WPF reports e.Key = Key.System and e.SystemKey = actual key.
-        // Also check e.SystemKey since Alt triggers WM_SYSKEYDOWN.
-        if ((Keyboard.IsKeyDown(Key.LeftAlt) || Keyboard.IsKeyDown(Key.RightAlt)) &&
-            (e.Key == Key.Z || e.SystemKey == Key.Z))
+        if ((e.KeyModifiers & KeyModifiers.Alt) != 0 && e.Key == Key.Z)
         {
             ToggleWordWrap();
             e.Handled = true;
@@ -278,15 +275,15 @@ public partial class MainWindow
         }
 
         // Alt+Up / Alt+Down — move line up/down
-        if ((Keyboard.IsKeyDown(Key.LeftAlt) || Keyboard.IsKeyDown(Key.RightAlt)))
+        if ((e.KeyModifiers & KeyModifiers.Alt) != 0)
         {
-            if (e.Key == Key.Up || e.SystemKey == Key.Up)
+            if (e.Key == Key.Up)
             {
                 MoveLineUp();
                 e.Handled = true;
                 return;
             }
-            if (e.Key == Key.Down || e.SystemKey == Key.Down)
+            if (e.Key == Key.Down)
             {
                 MoveLineDown();
                 e.Handled = true;
@@ -294,10 +291,10 @@ public partial class MainWindow
             }
         }
 
-        // Ctrl+Tab / Ctrl+Shift+Tab — file navigation (needs non-strict modifier check)
-        if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control && e.Key == Key.Tab)
+        // Ctrl+Tab / Ctrl+Shift+Tab — file navigation
+        if ((e.KeyModifiers & KeyModifiers.Control) != 0 && e.Key == Key.Tab)
         {
-            if ((Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift)
+            if ((e.KeyModifiers & KeyModifiers.Shift) != 0)
                 SelectPreviousFile();
             else
                 SelectNextFile();
@@ -306,9 +303,9 @@ public partial class MainWindow
             return;
         }
 
-        // Ctrl+Shift+C — insert code block (```)
-        if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control &&
-            (Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift &&
+        // Ctrl+Shift+C — insert code block
+        if ((e.KeyModifiers & KeyModifiers.Control) != 0 &&
+            (e.KeyModifiers & KeyModifiers.Shift) != 0 &&
             e.Key == Key.C)
         {
             InsertCodeBlock();
@@ -316,9 +313,9 @@ public partial class MainWindow
             return;
         }
 
-        // Ctrl+Shift+I — inline code (`)
-        if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control &&
-            (Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift &&
+        // Ctrl+Shift+I — inline code
+        if ((e.KeyModifiers & KeyModifiers.Control) != 0 &&
+            (e.KeyModifiers & KeyModifiers.Shift) != 0 &&
             e.Key == Key.I)
         {
             InsertMarkdownWrapper("`");
@@ -326,10 +323,10 @@ public partial class MainWindow
             return;
         }
 
-        // F3 / Shift+F3 — find next/previous (no Ctrl needed)
+        // F3 / Shift+F3 — find next/previous
         if (e.Key == Key.F3)
         {
-            if ((Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift)
+            if ((e.KeyModifiers & KeyModifiers.Shift) != 0)
                 FindPrevious();
             else
                 FindNext();
@@ -337,12 +334,8 @@ public partial class MainWindow
             return;
         }
 
-        // Ctrl+Plus/Minus/0 is handled at Window level (MainWindow_PreviewKeyDown)
-        // for context-sensitive behavior. Only other Ctrl-based shortcuts remain here.
-
-        // Markdown formatting and editor shortcuts (exact Ctrl only, no other modifiers)
-        bool ctrl = Keyboard.Modifiers == ModifierKeys.Control;
-        if (!ctrl) return;
+        // Markdown formatting and editor shortcuts (exact Ctrl only)
+        if (e.KeyModifiers != KeyModifiers.Control) return;
 
         switch (e.Key)
         {
@@ -383,7 +376,7 @@ public partial class MainWindow
                 e.Handled = true;
                 break;
             case Key.G:
-                if ((Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift)
+                if ((e.KeyModifiers & KeyModifiers.Shift) != 0)
                     FindPrevious();
                 else
                     FindNext();

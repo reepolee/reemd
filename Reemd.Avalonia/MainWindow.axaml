@@ -1,0 +1,297 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv="clr-namespace:Avalonia.Controls;assembly=Avalonia.Controls.WebView"
+        xmlns:conv="clr-namespace:Reemd"
+        x:Class="Reemd.MainWindow"
+        x:CompileBindings="False"
+        Title="Reemd - Markdown Editor"
+        Width="1100" Height="700"
+        MinWidth="700" MinHeight="400"
+        Closing="Window_Closing">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Toolbar: left group (folder + editor actions), right group (project shortcuts) -->
+        <Border Grid.Row="0" x:Name="ToolbarBorder"
+                Background="#F6F6F6" BorderBrush="#D0D0D0" BorderThickness="0,0,0,1"
+                Padding="4,3">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Left: existing toolbar items -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Spacing="6">
+                    <TextBlock Text="Folder:" VerticalAlignment="Center" />
+                    <ComboBox x:Name="FolderCombo" MinWidth="200" IsEditable="True"
+                              ToolTip.Tip="Path to folder with .md files"
+                              LostFocus="FolderCombo_LostFocus"
+                              KeyDown="FolderCombo_KeyDown"
+                              Text="." />
+                    <Button x:Name="BtnBrowse" Content="Browse" Click="Browse_Click" />
+                    <Border Width="1" Height="18" Background="#C0C0C0" Margin="6,0" />
+                    <Button x:Name="BtnOpenFolder" Content="📂" ToolTip.Tip="Open folder in File Explorer" Click="BtnOpenFolder_Click" />
+                    <Border Width="1" Height="18" Background="#C0C0C0" Margin="6,0" />
+                    <ToggleButton x:Name="BtnToggleTheme" Content="🌙" ToolTip.Tip="Toggle dark/light theme" Click="BtnToggleTheme_Click" />
+                    <Border Width="1" Height="18" Background="#C0C0C0" Margin="6,0" />
+                    <Button x:Name="BtnPull" Content="⬇️ Pull" ToolTip.Tip="Pull latest changes from remote (Ctrl+Shift+P)" Click="BtnPull_Click" />
+                    <Border Width="1" Height="18" Background="#C0C0C0" Margin="6,0" />
+                    <Button x:Name="BtnNewIssue" Content="🐛 New Issue" ToolTip.Tip="Create a new GitHub issue (Ctrl+Alt+I)" Click="BtnNewIssue_Click" />
+                </StackPanel>
+
+                <!-- Right: project shortcut buttons, justified to the end -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Spacing="2">
+                    <ItemsControl x:Name="ProjectButtonsHost">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Content="{Binding Label}" Margin="2,0" Padding="8,2"
+                                        ToolTip.Tip="{Binding ToolTip}"
+                                        Click="ProjectButton_Click" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Border Width="1" Height="18" Background="#C0C0C0" Margin="6,0" />
+                    <Button x:Name="BtnEditProjects" Content="⚙" Padding="6,2" Margin="2,0,2,0"
+                            ToolTip.Tip="Edit project shortcut buttons"
+                            Click="BtnEditProjects_Click" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Main content area -->
+        <Grid Grid.Row="1" x:Name="MainContentGrid">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="250" MinWidth="150" />
+                <ColumnDefinition Width="5" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Left sidebar with file list -->
+            <Border x:Name="SidebarBorder" Grid.Column="0" Background="#F5F5F5" BorderBrush="#E0E0E0" BorderThickness="0,0,1,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <Border x:Name="FileListHeader" Grid.Row="0" Background="#2D2D2D" Padding="8,6">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Files" FontWeight="Bold" Foreground="White" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="1" x:Name="FileCountText" Foreground="#AAAAAA" FontSize="12" VerticalAlignment="Center" />
+                        </Grid>
+                    </Border>
+
+                    <ListBox Grid.Row="1" x:Name="FileListBox"
+                             Margin="0" BorderThickness="0"
+                             FontSize="14"
+                             SelectionChanged="FileListBox_SelectionChanged"
+                             DoubleTapped="FileListBox_DoubleTapped"
+                             KeyDown="FileListBox_KeyDown">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0"
+                                               Text="{Binding Name}"
+                                               Padding="8,4,4,4"
+                                               TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Center" />
+
+                                    <Button Grid.Column="1"
+                                            Width="20" Padding="0"
+                                            Margin="0,0,8,0"
+                                            VerticalAlignment="Center"
+                                            HorizontalContentAlignment="Center"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            Opacity="{Binding IsPinned, Converter={x:Static conv:Converters.PinOpacity}}"
+                                            Click="PinToggle_Click"
+                                            ToolTip.Tip="Toggle pin to top">
+                                        <TextBlock Text="📌" FontSize="11" />
+                                    </Button>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <Border x:Name="SidebarFooter" Grid.Row="2" Background="#E8E8E8" Padding="6,4">
+                        <TextBlock x:Name="FileCountStatus" FontSize="12" Foreground="#666" />
+                    </Border>
+                </Grid>
+            </Border>
+
+            <!-- Grid splitter -->
+            <GridSplitter x:Name="SidebarSplitter" Grid.Column="1"
+                          HorizontalAlignment="Stretch"
+                          Background="#E0E0E0"
+                          ResizeDirection="Columns" />
+
+            <!-- Right side: split editor + preview -->
+            <Grid Grid.Column="2" x:Name="EditorPreviewGrid">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="5" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Editor (left side) - raw markdown text -->
+                <Border Grid.Column="0" x:Name="EditorBorder" BorderBrush="#E0E0E0" BorderThickness="1" Padding="0">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <!-- Find bar (hidden by default) -->
+                        <Border x:Name="FindBar" Grid.Row="0"
+                                Background="#F0F0F0" BorderBrush="#D0D0D0" BorderThickness="0,0,0,1"
+                                Height="34" IsVisible="False">
+                            <Grid Margin="8,0" ColumnDefinitions="*,Auto,Auto,Auto,Auto">
+                                <TextBox x:Name="FindTextBox" Grid.Column="0"
+                                         Height="22" VerticalAlignment="Center"
+                                         BorderBrush="#C0C0C0" BorderThickness="1"
+                                         Padding="4,0"
+                                         TextChanged="FindTextBox_TextChanged"
+                                         KeyDown="FindTextBox_KeyDown" />
+
+                                <TextBlock x:Name="FindMatchCount" Grid.Column="1"
+                                           Text="" FontSize="12"
+                                           VerticalAlignment="Center" HorizontalAlignment="Center"
+                                           Margin="8,0" MinWidth="40" TextAlignment="Center"
+                                           Foreground="#666" />
+
+                                <Button x:Name="FindPrevBtn" Grid.Column="2"
+                                        Content="▲" FontSize="11" Width="24" Height="22" Padding="0"
+                                        ToolTip.Tip="Previous match (Shift+Enter)"
+                                        Click="FindPrevBtn_Click" />
+
+                                <Button x:Name="FindNextBtn" Grid.Column="3"
+                                        Content="▼" FontSize="11" Width="24" Height="22" Padding="0"
+                                        ToolTip.Tip="Next match (Enter)"
+                                        Click="FindNextBtn_Click" />
+
+                                <Button x:Name="FindCloseBtn" Grid.Column="4"
+                                        Content="✕" FontSize="13" Width="24" Height="22" Padding="0"
+                                        Margin="8,0,0,0"
+                                        ToolTip.Tip="Close (Esc)"
+                                        Click="FindCloseBtn_Click" />
+                            </Grid>
+                        </Border>
+
+                        <!-- Replace bar (hidden by default, shown on Ctrl+H) -->
+                        <Border x:Name="ReplaceBar" Grid.Row="1"
+                                Background="#F0F0F0" BorderBrush="#D0D0D0" BorderThickness="0,0,0,1"
+                                Height="34" IsVisible="False">
+                            <Grid Margin="8,0" ColumnDefinitions="*,Auto,Auto,Auto">
+                                <TextBox x:Name="ReplaceTextBox" Grid.Column="0"
+                                         Height="22" VerticalAlignment="Center"
+                                         BorderBrush="#C0C0C0" BorderThickness="1"
+                                         Padding="4,0"
+                                         KeyDown="ReplaceTextBox_KeyDown" />
+
+                                <Button x:Name="ReplaceBtn" Grid.Column="1"
+                                        Content="Replace" FontSize="12"
+                                        Height="22" MinWidth="60" Padding="6,0"
+                                        Margin="8,0,0,0"
+                                        ToolTip.Tip="Replace current match and find next (Ctrl+Enter)"
+                                        Click="ReplaceBtn_Click" />
+
+                                <Button x:Name="ReplaceAllBtn" Grid.Column="2"
+                                        Content="All" FontSize="12"
+                                        Height="22" MinWidth="34" Padding="6,0"
+                                        Margin="4,0,0,0"
+                                        ToolTip.Tip="Replace all matches"
+                                        Click="ReplaceAllBtn_Click" />
+
+                                <Button x:Name="ReplaceCloseBtn" Grid.Column="3"
+                                        Content="✕" FontSize="13" Width="24" Height="22" Padding="0"
+                                        Margin="8,0,0,0"
+                                        ToolTip.Tip="Close (Esc)"
+                                        Click="ReplaceCloseBtn_Click" />
+                            </Grid>
+                        </Border>
+
+                        <!-- Editor text area -->
+                        <Grid Grid.Row="2">
+                            <TextBox x:Name="Editor"
+                                     Padding="32"
+                                     BorderThickness="0"
+                                     AcceptsTab="True"
+                                     AcceptsReturn="True"
+                                     FontFamily="Cascadia Code, Menlo, Monaco, Consolas, monospace"
+                                     FontSize="13"
+                                     TextWrapping="NoWrap"
+                                     TextChanged="Editor_TextChanged">
+                                <TextBox.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Cut" Click="ContextMenu_Cut_Click" />
+                                        <MenuItem Header="Copy" Click="ContextMenu_Copy_Click" />
+                                        <MenuItem Header="Paste" Click="ContextMenu_Paste_Click" />
+                                        <Separator />
+                                        <MenuItem Header="Bold (Ctrl+B)" Click="ContextMenu_Bold_Click" />
+                                        <MenuItem Header="Italic (Ctrl+I)" Click="ContextMenu_Italic_Click" />
+                                        <MenuItem Header="Inline Code (Ctrl+Shift+I)" Click="ContextMenu_InlineCode_Click" />
+                                        <MenuItem Header="Code Block (Ctrl+Shift+C)" Click="ContextMenu_CodeBlock_Click" />
+                                        <Separator />
+                                        <MenuItem Header="Link (Ctrl+K)" Click="ContextMenu_Link_Click" />
+                                    </ContextMenu>
+                                </TextBox.ContextMenu>
+                            </TextBox>
+                        </Grid>
+                    </Grid>
+                </Border>
+
+                <!-- Grid splitter between editor and preview -->
+                <GridSplitter x:Name="EditorPreviewSplitter" Grid.Column="1"
+                              HorizontalAlignment="Stretch"
+                              Background="#E0E0E0"
+                              ResizeDirection="Columns" />
+
+                <!-- Preview (right side) - rendered markdown in native WebView -->
+                <Border Grid.Column="2" x:Name="PreviewBorder" Background="White" BorderBrush="#E0E0E0" BorderThickness="1">
+                    <wv:NativeWebView x:Name="Preview" Margin="0" />
+                </Border>
+            </Grid>
+        </Grid>
+
+        <!-- Status bar -->
+        <Border x:Name="AppStatusBar" Grid.Row="2" Background="#F0F0F0" BorderBrush="#D0D0D0" BorderThickness="0,1,0,0" Padding="0">
+            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto,Auto">
+                <TextBlock Grid.Column="0" x:Name="StatusText" Text="Ready" FontSize="13" Margin="4,2" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" x:Name="SavedIndicator" Text="💾 Saved" FontSize="12" Foreground="#2E7D32" Margin="4,2" VerticalAlignment="Center" />
+                <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <TextBlock x:Name="FontSizeText" Text="" FontSize="12" Margin="4,2" />
+                    <TextBlock x:Name="PreviewFontSizeText" Text="" FontSize="12" Margin="4,2" />
+                </StackPanel>
+                <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="2,0">
+                    <Button x:Name="BtnScrollTop"
+                            Content="⤒" FontSize="13" Width="22" Height="20" Padding="0"
+                            ToolTip.Tip="Scroll to top (Ctrl+Home)"
+                            Click="BtnScrollTop_Click" />
+                    <Button x:Name="BtnScrollBottom"
+                            Content="⤓" FontSize="13" Width="22" Height="20" Padding="0"
+                            ToolTip.Tip="Scroll to bottom (Ctrl+End)"
+                            Click="BtnScrollBottom_Click" />
+                </StackPanel>
+                <TextBlock Grid.Column="4" x:Name="CursorPositionText" Text="Ln 1, Col 1" FontSize="12" Foreground="#666" Margin="4,2" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="5" x:Name="GitHubStatusText" Text="" FontSize="12" Foreground="#666" Margin="4,2" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="6" x:Name="LastSyncText" Text="" FontSize="12" Foreground="#666" Margin="4,2" VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

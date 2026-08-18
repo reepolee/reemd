@@ -11,6 +11,7 @@ public partial class App : System.Windows.Application
 {
     private const uint VK_SPACE = 0x20;
     private const uint VK_I = 0x49;
+    private const uint VK_1 = 0x31; // VK_0 = 0x30 .. VK_9 = 0x39
 
     private TaskbarIcon? _trayIcon;
     private HotKeyService? _hotKeyService;
@@ -28,10 +29,13 @@ public partial class App : System.Windows.Application
         SetupTrayIcon();
 
         _hotKeyService = new HotKeyService(_mainWindow);
-        _hotKeyService.AddHotKey("ToggleWindow", HotKeyService.MOD_CONTROL | HotKeyService.MOD_SHIFT, VK_SPACE);
-        _hotKeyService.AddHotKey("NewIssue", HotKeyService.MOD_CONTROL | HotKeyService.MOD_ALT, VK_I);
         _hotKeyService.HotKeyPressed += OnHotKeyPressed;
-        _hotKeyService.Register();
+
+        // Re-register hotkeys whenever the project list changes, so the global
+        // Ctrl+Shift+N keys always match the current project count.
+        _mainWindow.ProjectShortcutsChanged += RegisterHotKeys;
+
+        RegisterHotKeys();
 
         _mainWindow.Show();
         _mainWindow.Activate();
@@ -84,7 +88,38 @@ public partial class App : System.Windows.Application
             case "NewIssue":
                 _mainWindow.OpenNewIssueDialog();
                 break;
+            default:
+                // Ctrl+Shift+1..9 — launch the matching project shortcut
+                if (name.StartsWith("Project", StringComparison.Ordinal) &&
+                    int.TryParse(name.AsSpan("Project".Length), out var number))
+                {
+                    _mainWindow.LaunchProjectByIndex(number - 1);
+                }
+                break;
         }
+    }
+
+    /// <summary>
+    /// (Re)registers all global hotkeys. Project hotkeys track the current project
+    /// count so Ctrl+Shift+N is only claimed for projects that actually exist.
+    /// </summary>
+    private void RegisterHotKeys()
+    {
+        if (_hotKeyService == null || _mainWindow == null) return;
+
+        _hotKeyService.Reset();
+
+        _hotKeyService.AddHotKey("ToggleWindow", HotKeyService.MOD_CONTROL | HotKeyService.MOD_SHIFT, VK_SPACE);
+        _hotKeyService.AddHotKey("NewIssue", HotKeyService.MOD_CONTROL | HotKeyService.MOD_ALT, VK_I);
+
+        var modifiers = _mainWindow.ProjectHotkeyModifiers;
+        var count = Math.Min(_mainWindow.ProjectShortcutCount, 9);
+        for (uint i = 0; i < count; i++)
+        {
+            _hotKeyService.AddHotKey($"Project{i + 1}", modifiers, VK_1 + i);
+        }
+
+        _hotKeyService.Register();
     }
 
     private void ShowWindow()
