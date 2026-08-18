@@ -152,6 +152,8 @@ dotnet run --project Reemd.Avalonia
 | `F3` / `Shift+F3` | Find next / previous |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous file |
 | `Alt+Up` / `Alt+Down` | Move line up / down |
+| `PageUp` / `PageDown` | Page up / down in the editor or preview (whichever has focus) |
+| `Cmd+Up` / `Cmd+Down` (macOS) | Page up / down on MacBook keyboards (editor or preview) |
 | `Alt+Z` | Toggle word wrap |
 | `Ctrl+Shift+P` | Force git pull |
 | `Ctrl+Plus` / `Ctrl+Minus` / `Ctrl+0` | Adjust active panel font size |

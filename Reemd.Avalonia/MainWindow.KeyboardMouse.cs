@@ -28,20 +28,18 @@ public partial class MainWindow
         ScrollEditorToBottom();
     }
 
-    private void ScrollEditorToTop()
+    private async void ScrollEditorToTop()
     {
-        Editor.CaretIndex = 0;
         if (_editorScrollViewer != null)
-            _editorScrollViewer.Offset = new Vector(_editorScrollViewer.Offset.X, 0);
-        Dispatcher.UIThread.Post(SyncEditorToPreview, DispatcherPriority.Background);
+            await AnimateEditorScroll(0);
+        Editor.CaretIndex = 0;
     }
 
-    private void ScrollEditorToBottom()
+    private async void ScrollEditorToBottom()
     {
-        Editor.CaretIndex = Editor.Text?.Length ?? 0;
         if (_editorScrollViewer != null)
-            _editorScrollViewer.Offset = new Vector(_editorScrollViewer.Offset.X, ScrollableHeight(_editorScrollViewer));
-        Dispatcher.UIThread.Post(SyncEditorToPreview, DispatcherPriority.Background);
+            await AnimateEditorScroll(ScrollableHeight(_editorScrollViewer));
+        Editor.CaretIndex = Editor.Text?.Length ?? 0;
     }
 
     /// <summary>
@@ -106,6 +104,29 @@ public partial class MainWindow
     /// </summary>
     private void MainWindow_PreviewKeyDown(object? sender, KeyEventArgs e)
     {
+        // Page the preview when it has focus (the editor handles its own paging in
+        // Editor_KeyDown, which only fires when the editor is in the event route).
+        if (IsPreviewFocused)
+        {
+            if (e.KeyModifiers == KeyModifiers.None &&
+                (e.Key == Key.PageDown || e.Key == Key.PageUp))
+            {
+                PagePreview(e.Key == Key.PageDown ? +1 : -1);
+                e.Handled = true;
+                return;
+            }
+
+            // Cmd+Up / Cmd+Down — MacBook paging for the preview.
+            if (OperatingSystem.IsMacOS() &&
+                (e.KeyModifiers & KeyModifiers.Meta) != 0 &&
+                (e.Key == Key.Down || e.Key == Key.Up))
+            {
+                PagePreview(e.Key == Key.Down ? +1 : -1);
+                e.Handled = true;
+                return;
+            }
+        }
+
         // Number keys 1-9 — trigger the matching project shortcut button.
         // Only fires when not typing in a text box, so numbers still type normally.
         if (e.KeyModifiers == KeyModifiers.None)
@@ -252,6 +273,37 @@ public partial class MainWindow
             (e.Key == Key.Insert && (e.KeyModifiers & KeyModifiers.Shift) != 0))
         {
             HandlePaste();
+            e.Handled = true;
+            return;
+        }
+
+        // PageDown / PageUp — page the editor by one viewport height.
+        // Handled explicitly because Avalonia's built-in TextBox paging is
+        // unreliable on macOS for the dedicated Page Up / Page Down keys.
+        if (e.KeyModifiers == KeyModifiers.None)
+        {
+            if (e.Key == Key.PageDown)
+            {
+                PageEditor(+1);
+                e.Handled = true;
+                return;
+            }
+            if (e.Key == Key.PageUp)
+            {
+                PageEditor(-1);
+                e.Handled = true;
+                return;
+            }
+        }
+
+        // Cmd+Up / Cmd+Down — page on the MacBook keyboard, which has no dedicated
+        // Page keys. Avalonia's macOS backend drops the Fn modifier, so Fn+Up/Down
+        // can't be detected; Cmd+arrow is the free, Mac-native alternative.
+        if (OperatingSystem.IsMacOS() &&
+            (e.KeyModifiers & KeyModifiers.Meta) != 0 &&
+            (e.Key == Key.Up || e.Key == Key.Down))
+        {
+            PageEditor(e.Key == Key.Down ? +1 : -1);
             e.Handled = true;
             return;
         }

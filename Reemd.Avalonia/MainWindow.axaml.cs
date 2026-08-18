@@ -75,6 +75,9 @@ public partial class MainWindow : SukiWindow
     private bool IsEditorFocused =>
         ReferenceEquals(TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement(), Editor);
 
+    private bool IsPreviewFocused =>
+        ReferenceEquals(TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement(), Preview);
+
     internal bool IsDarkMode => _isDarkMode;
 
     // Parameterless ctor required by the Avalonia XAML compiler (never used at runtime).
