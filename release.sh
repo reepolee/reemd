@@ -198,7 +198,7 @@ for entry in "${targets[@]}"; do
 
 	if [[ "$rid" == win-* ]]; then
 		# Windows: zip the single-file exe + native DLLs together.
-		(cd "$OUT/$rid" && zip -q -r "../../$zip_file" .)
+		(cd "$OUT/$rid" && zip -q -r "../$zip_file" .)
 	else
 		# macOS: wrap the publish output in a .app bundle, then zip it.
 		stage="$OUT/$base"
@@ -242,10 +242,10 @@ EOF
 			cp "$(dirname "$PROJECT")/icon.icns" "$appdir/Contents/Resources/icon.icns"
 		fi
 
-		(cd "$stage" && zip -q -r "../../$zip_file" "$BUNDLE.app")
+		(cd "$stage" && zip -q -r "../$zip_file" "$BUNDLE.app")
 	fi
 
-	built_assets+=("./$zip_file#$zip_file")
+	built_assets+=("./$OUT/$zip_file#$zip_file")
 	echo "  → $zip_file"
 done
 
