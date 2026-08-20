@@ -2,7 +2,6 @@ using System.IO;
 using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Interactivity;
-using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Reemd.Models;
 using Reemd.Services;
@@ -32,11 +31,11 @@ public partial class ProjectEditDialog : Window
     public string HotkeyToken => HotkeyCombo.SelectedValue as string ?? ProjectHotkey.DefaultToken;
 
     // Parameterless ctor required by the Avalonia XAML compiler (never used at runtime).
-    public ProjectEditDialog() : this(Array.Empty<ProjectShortcut>(), false, ProjectHotkey.DefaultToken)
+    public ProjectEditDialog() : this(Array.Empty<ProjectShortcut>(), ProjectHotkey.DefaultToken)
     {
     }
 
-    public ProjectEditDialog(IEnumerable<ProjectShortcut> projects, bool isDarkMode, string projectHotkeyToken)
+    public ProjectEditDialog(IEnumerable<ProjectShortcut> projects, string projectHotkeyToken)
     {
         InitializeComponent();
 
@@ -71,9 +70,6 @@ public partial class ProjectEditDialog : Window
         HotkeyCombo.SelectedValue = ProjectHotkey.Options.Any(o => o.Token == projectHotkeyToken)
             ? projectHotkeyToken
             : ProjectHotkey.DefaultToken;
-
-        if (isDarkMode)
-            ApplyDarkTheme();
 
         Opened += (_, _) =>
         {
@@ -356,25 +352,6 @@ public partial class ProjectEditDialog : Window
         }
 
         Close(true);
-    }
-
-    private void ApplyDarkTheme()
-    {
-        Background = new SolidColorBrush(Color.FromRgb(0x1E, 0x1E, 0x1E));
-        Foreground = new SolidColorBrush(Colors.White);
-        ProjectList.Background = new SolidColorBrush(Color.FromRgb(0x25, 0x25, 0x26));
-        ProjectList.Foreground = new SolidColorBrush(Color.FromRgb(0xCC, 0xCC, 0xCC));
-        NameTextBox.Background = new SolidColorBrush(Color.FromRgb(0x3C, 0x3C, 0x3C));
-        NameTextBox.Foreground = new SolidColorBrush(Colors.White);
-        PathTextBox.Background = new SolidColorBrush(Color.FromRgb(0x3C, 0x3C, 0x3C));
-        PathTextBox.Foreground = new SolidColorBrush(Colors.White);
-        TerminalCombo.Background = new SolidColorBrush(Color.FromRgb(0x3C, 0x3C, 0x3C));
-        TerminalCombo.Foreground = new SolidColorBrush(Colors.White);
-        HotkeyCombo.Background = new SolidColorBrush(Color.FromRgb(0x3C, 0x3C, 0x3C));
-        HotkeyCombo.Foreground = new SolidColorBrush(Colors.White);
-        CommandTextBox.Background = new SolidColorBrush(Color.FromRgb(0x3C, 0x3C, 0x3C));
-        CommandTextBox.Foreground = new SolidColorBrush(Colors.White);
-        WarningText.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x9A, 0x9A));
     }
 }
 

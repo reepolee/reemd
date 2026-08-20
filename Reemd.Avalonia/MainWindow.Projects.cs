@@ -21,7 +21,11 @@ public partial class MainWindow
 
     private readonly List<ProjectShortcut> _projectShortcuts = [];
 
-    private static readonly string ProjectsFilePath = Path.Combine(
+    /// <summary>Per-repo settings file (<c>.reemd/projects.json</c>) inside the current repo.</summary>
+    private string RepoProjectsFilePath => Path.Combine(_markdownFolder, ".reemd", "projects.json");
+
+    /// <summary>Local fallback file, used only for repos that don't have a config yet.</summary>
+    private static readonly string LocalProjectsFilePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Reemd", "projects.json");
 
@@ -39,41 +43,28 @@ public partial class MainWindow
         var sanitized = false;
         try
         {
-            if (!File.Exists(ProjectsFilePath)) return;
-
-            var json = File.ReadAllText(ProjectsFilePath);
-            var list = JsonSerializer.Deserialize<List<ProjectShortcut>>(json);
-            if (list == null) return;
-
-            _projectShortcuts.Clear();
-
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var p in list.Where(p => !string.IsNullOrWhiteSpace(p.Path)))
+            if (File.Exists(RepoProjectsFilePath))
             {
-                if (string.IsNullOrWhiteSpace(p.Name))
-                {
-                    var folder = Path.GetFileName(p.Path.TrimEnd('\\', '/'));
-                    if (string.IsNullOrWhiteSpace(folder))
-                        continue;
-                    p.Name = folder;
-                    sanitized = true;
-                }
+                // Per-repo config: also carries the hotkey modifier combo.
+                var settings = JsonSerializer.Deserialize<ProjectShortcutSettings>(
+                    File.ReadAllText(RepoProjectsFilePath));
+                if (settings == null) return;
 
-                if (seen.Contains(p.Name))
-                {
-                    var counter = 2;
-                    string candidate;
-                    do
-                    {
-                        candidate = $"{p.Name}-{counter}";
-                        counter++;
-                    } while (seen.Contains(candidate));
-                    p.Name = candidate;
-                    sanitized = true;
-                }
+                _projectHotkeyToken = settings.HotkeyToken;
+                sanitized = ApplyLoadedProjects(settings.Projects);
+            }
+            else if (File.Exists(LocalProjectsFilePath))
+            {
+                // Legacy local file — fallback for repos without a config yet.
+                var list = JsonSerializer.Deserialize<List<ProjectShortcut>>(
+                    File.ReadAllText(LocalProjectsFilePath));
+                if (list == null) return;
 
-                seen.Add(p.Name);
-                _projectShortcuts.Add(p);
+                sanitized = ApplyLoadedProjects(list);
+            }
+            else
+            {
+                return;
             }
         }
         catch
@@ -85,18 +76,80 @@ public partial class MainWindow
 
         if (sanitized)
             SaveProjectShortcuts();
+
+        // The shortcut count and hotkey combo can differ per repo — re-register
+        // so the global hotkeys always match the repo that's currently open.
+        ProjectShortcutsChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// Replaces the current shortcut list with the given projects, deriving names
+    /// from the path and de-duplicating. Returns true if any names were rewritten.
+    /// </summary>
+    private bool ApplyLoadedProjects(List<ProjectShortcut> projects)
+    {
+        _projectShortcuts.Clear();
+
+        var sanitized = false;
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var p in projects.Where(p => !string.IsNullOrWhiteSpace(p.Path)))
+        {
+            if (string.IsNullOrWhiteSpace(p.Name))
+            {
+                var folder = Path.GetFileName(p.Path.TrimEnd('\\', '/'));
+                if (string.IsNullOrWhiteSpace(folder))
+                    continue;
+                p.Name = folder;
+                sanitized = true;
+            }
+
+            if (seen.Contains(p.Name))
+            {
+                var counter = 2;
+                string candidate;
+                do
+                {
+                    candidate = $"{p.Name}-{counter}";
+                    counter++;
+                } while (seen.Contains(candidate));
+                p.Name = candidate;
+                sanitized = true;
+            }
+
+            seen.Add(p.Name);
+            _projectShortcuts.Add(p);
+        }
+
+        return sanitized;
     }
 
     private void SaveProjectShortcuts()
     {
         try
         {
-            var dir = Path.GetDirectoryName(ProjectsFilePath);
+            var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
+
+            // Per-repo copy (.reemd/projects.json in the current repo) is the source
+            // of truth — it travels with the repo, so opening another repo shows
+            // that repo's shortcuts automatically (and git sync commits it).
+            if (Path.IsPathRooted(_markdownFolder) && Directory.Exists(_markdownFolder))
+            {
+                var repoDir = Path.Combine(_markdownFolder, ".reemd");
+                Directory.CreateDirectory(repoDir);
+                File.WriteAllText(Path.Combine(repoDir, "projects.json"),
+                    JsonSerializer.Serialize(new ProjectShortcutSettings
+                    {
+                        HotkeyToken = _projectHotkeyToken,
+                        Projects = _projectShortcuts
+                    }, jsonOptions));
+            }
+
+            // Local copy as a fallback for repos that don't have a config yet.
+            var dir = Path.GetDirectoryName(LocalProjectsFilePath);
             if (dir != null && !Directory.Exists(dir))
                 Directory.CreateDirectory(dir);
-
-            File.WriteAllText(ProjectsFilePath,
-                JsonSerializer.Serialize(_projectShortcuts, new JsonSerializerOptions { WriteIndented = true }));
+            File.WriteAllText(LocalProjectsFilePath,
+                JsonSerializer.Serialize(_projectShortcuts, jsonOptions));
         }
         catch
         {
@@ -125,7 +178,7 @@ public partial class MainWindow
     /// </summary>
     private async void BtnEditProjects_Click(object? sender, RoutedEventArgs e)
     {
-        var dialog = new ProjectEditDialog(_projectShortcuts, _isDarkMode, _projectHotkeyToken);
+        var dialog = new ProjectEditDialog(_projectShortcuts, _projectHotkeyToken);
 
         if (await dialog.ShowDialog<bool>(this))
         {

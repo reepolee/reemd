@@ -164,6 +164,12 @@ Add up to 9 shortcuts via the ⚙ button in the toolbar. Each shortcut opens a p
 folder in VS Code and a terminal in that folder. Launch with `Ctrl+Shift+<number>`
 globally, or just `<number>` while the editor is focused.
 
+Shortcut settings (the list **and** the hotkey combo) are stored per-repo in a
+`.reemd/projects.json` file at the root of the folder you're editing, so each repo
+carries its own shortcuts and the toolbar adapts automatically when you open another
+repo. The file is committed by the regular GitHub auto-sync. If a repo has no such
+file yet, your most recently saved shortcuts are used as a fallback.
+
 ## License
 
 [MIT](LICENSE)

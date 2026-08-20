@@ -2,7 +2,10 @@ using System.Diagnostics;
 using System.Text.Json;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Presenters;
 using Avalonia.Interactivity;
+using Avalonia.Media;
+using Avalonia.Media.TextFormatting;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
@@ -163,6 +166,12 @@ public partial class MainWindow
     private void RestorePerFileScroll()
     {
         RestoreEditorScroll();
+
+        // Guarantee the restored caret is visible after a file switch — the saved
+        // scroll ratio and caret position can be out of sync (e.g. the caret moved
+        // after the ratio was saved), and the caret is never revealed horizontally.
+        EnsureCaretVisible();
+
         _ = SyncEditorScrollToPreviewAsync();
     }
 
@@ -177,8 +186,10 @@ public partial class MainWindow
     /// <summary>
     /// Scrolls the editor by one viewport height (+1 = down, -1 = up) with a short
     /// ease-out animation, keeping the preview in sync. Used for the PageDown/PageUp keys.
+    /// The caret is moved along with the page so it stays visible and a pure-keyboard
+    /// user can keep typing immediately.
     /// </summary>
-    private async void PageEditor(int direction)
+    private async void PageEditor(int direction, bool extendSelection = false)
     {
         if (_editorScrollViewer == null) return;
 
@@ -188,11 +199,147 @@ public partial class MainWindow
         var page = _editorScrollViewer.Viewport.Height;
         if (page <= 0) return;
 
+        // Move the caret by the same distance as the scroll, keeping its column,
+        // so it ends up at the same spot on screen one page deeper into the text.
+        MoveCaretByPage(direction, page, extendSelection);
+
         var target = direction > 0
             ? Math.Min(_editorScrollViewer.Offset.Y + page, scrollable)
             : Math.Max(_editorScrollViewer.Offset.Y - page, 0);
 
         await AnimateEditorScroll(target);
+
+        // The page animation only scrolls vertically; the caret's column can fall
+        // outside the viewport horizontally (e.g. paging down to a line shorter
+        // than the one we left, on a long unwrapped line). Reveal it after the
+        // animation so the vertical page motion stays smooth.
+        EnsureCaretVisible();
+    }
+
+    /// <summary>
+    /// Moves the editor caret one viewport height up or down the document (keeping the
+    /// column), so it follows a PageUp/PageDown scroll and always stays visible. With
+    /// <paramref name="extendSelection"/> (Shift+PageUp/PageDown) the selection anchor
+    /// stays put and the caret end moves, extending the selection by a page.
+    /// </summary>
+    private void MoveCaretByPage(int direction, double page, bool extendSelection = false)
+    {
+        var presenter = FindDescendant<TextPresenter>(Editor);
+        var layout = presenter?.TextLayout;
+        if (layout == null || layout.TextLines.Count == 0) return;
+
+        var caretIndex = Editor.CaretIndex;
+        var caretRect = GetCaretDocumentRect(layout, caretIndex);
+
+        // Target document Y one page away, clamped to the text extent.
+        var targetY = Math.Clamp(caretRect.Y + direction * page, 0, layout.Height);
+
+        // The visual line at that Y.
+        var targetLine = layout.TextLines[^1];
+        double y = 0;
+        foreach (var line in layout.TextLines)
+        {
+            targetLine = line;
+            if (y + line.Height > targetY) break;
+            y += line.Height;
+        }
+
+        // Place the caret in the target line at the same column (collapses any selection).
+        var hit = targetLine.GetCharacterHitFromDistance(caretRect.X);
+        var newIndex = Math.Clamp(hit.FirstCharacterIndex + hit.TrailingLength,
+            targetLine.FirstTextSourceIndex,
+            targetLine.FirstTextSourceIndex + targetLine.Length);
+
+        if (newIndex == caretIndex) return;
+
+        if (extendSelection)
+        {
+            // The end of the selection opposite the caret stays fixed while paging.
+            // Compute it before changing the caret: Avalonia collapses the selection
+            // whenever CaretIndex changes, so the range is re-established afterwards.
+            var anchor = caretIndex == Editor.SelectionEnd ? Editor.SelectionStart : Editor.SelectionEnd;
+            Editor.CaretIndex = newIndex;
+            Editor.SelectionStart = Math.Min(anchor, newIndex);
+            Editor.SelectionEnd = Math.Max(anchor, newIndex);
+        }
+        else
+        {
+            Editor.CaretIndex = newIndex;
+            Editor.SelectionStart = newIndex;
+            Editor.SelectionEnd = newIndex;
+        }
+    }
+
+    /// <summary>
+    /// Returns the document-space rect of the caret (X = column offset within its
+    /// line, Y = top of the visual line, Height = line height). The caller must
+    /// pass a non-empty layout.
+    /// </summary>
+    private static Rect GetCaretDocumentRect(TextLayout layout, int caretIndex)
+    {
+        // The visual line holding the caret (a caret at the very end of the text
+        // belongs to the last line), accumulating the Y of its top edge.
+        double caretY = 0;
+        var caretLine = layout.TextLines[^1];
+        foreach (var line in layout.TextLines)
+        {
+            var lineEnd = line.FirstTextSourceIndex + line.Length + line.NewLineLength;
+            if (caretIndex < lineEnd)
+            {
+                caretLine = line;
+                break;
+            }
+            caretY += line.Height;
+        }
+
+        // Caret column within its line (distance from the leading edge).
+        var xIndex = Math.Clamp(caretIndex,
+            caretLine.FirstTextSourceIndex,
+            caretLine.FirstTextSourceIndex + caretLine.Length);
+        var caretX = caretLine.GetDistanceFromCharacterHit(new CharacterHit(xIndex, 0));
+
+        return new Rect(caretX, caretY, 0, caretLine.Height);
+    }
+
+    /// <summary>
+    /// Adjusts the editor's scroll offset (both axes) so the caret is inside the
+    /// viewport. Safety net for scroll-to-top/bottom: Avalonia only brings the caret
+    /// into view when its index actually changes, so a caret that's already at the
+    /// top/bottom can stay hidden (e.g. off-screen horizontally on a long unwrapped
+    /// line) after Ctrl+Home/Ctrl+End.
+    /// </summary>
+    private void EnsureCaretVisible()
+    {
+        if (_editorScrollViewer == null) return;
+
+        var presenter = FindDescendant<TextPresenter>(Editor);
+        var layout = presenter?.TextLayout;
+        if (layout == null || layout.TextLines.Count == 0) return;
+
+        var caretRect = GetCaretDocumentRect(layout, Editor.CaretIndex);
+
+        var viewport = _editorScrollViewer.Viewport;
+        var offset = _editorScrollViewer.Offset;
+        var scrollableX = Math.Max(0, _editorScrollViewer.Extent.Width - viewport.Width);
+        var scrollableY = Math.Max(0, _editorScrollViewer.Extent.Height - viewport.Height);
+
+        var x = offset.X;
+        if (caretRect.Left < offset.X)
+            x = caretRect.Left;
+        else if (caretRect.Right > offset.X + viewport.Width)
+            x = caretRect.Right - viewport.Width;
+
+        var y = offset.Y;
+        if (caretRect.Top < offset.Y)
+            y = caretRect.Top;
+        else if (caretRect.Bottom > offset.Y + viewport.Height)
+            y = caretRect.Bottom - viewport.Height;
+
+        x = Math.Clamp(x, 0, scrollableX);
+        y = Math.Clamp(y, 0, scrollableY);
+
+        if (Math.Abs(x - offset.X) > 0.5 || Math.Abs(y - offset.Y) > 0.5)
+            _editorScrollViewer.Offset = new Vector(x, y);
     }
 
     /// <summary>

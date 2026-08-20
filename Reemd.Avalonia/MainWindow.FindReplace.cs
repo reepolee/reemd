@@ -119,6 +119,11 @@ public partial class MainWindow
         Editor.SelectionStart = start;
         Editor.SelectionEnd = start + searchText.Length;
         Editor.CaretIndex = start + searchText.Length;
+
+        // Guarantee the match is scrolled into view (including horizontally) —
+        // Avalonia only reveals the caret when its index actually changes, so a
+        // jump to an already-visible or unchanged position wouldn't scroll.
+        EnsureCaretVisible();
     }
 
     private void FindTextBox_TextChanged(object? sender, TextChangedEventArgs e)

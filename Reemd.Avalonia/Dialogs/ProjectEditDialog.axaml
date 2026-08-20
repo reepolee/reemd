@@ -3,6 +3,8 @@
         x:Class="Reemd.Dialogs.ProjectEditDialog"
         x:CompileBindings="False"
         Title="Project Shortcuts"
+        Background="{DynamicResource SukiCardBackground}"
+        Foreground="{DynamicResource SukiText}"
         Width="640" Height="520"
         MinWidth="480" MinHeight="360"
         WindowStartupLocation="CenterOwner"
@@ -30,11 +32,11 @@
                     <DataTemplate>
                         <StackPanel Orientation="Horizontal" Margin="2">
                             <TextBlock Text="{Binding Number}"
-                                       FontWeight="Bold" Foreground="#888" Margin="0,0,10,0" VerticalAlignment="Center"
+                                       FontWeight="Bold" Foreground="{DynamicResource SukiLowText}" Margin="0,0,10,0" VerticalAlignment="Center"
                                        ToolTip.Tip="Button number on the toolbar" />
                             <StackPanel>
                                 <TextBlock Text="{Binding Project.Name}" FontWeight="Bold" />
-                                <TextBlock Text="{Binding Project.Path}" Foreground="#888" FontSize="12" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Text="{Binding Project.Path}" Foreground="{DynamicResource SukiLowText}" FontSize="12" TextTrimming="CharacterEllipsis" />
                             </StackPanel>
                         </StackPanel>
                     </DataTemplate>
@@ -80,10 +82,10 @@
                      ToolTip.Tip="Optional custom command. {path} = project folder, {name} = project name. Leave empty for VSCode + terminal." />
             <TextBlock Grid.Row="4" Grid.Column="1"
                        Text="Optional. Runs instead of the default VSCode + terminal launch. {path} = project folder, {name} = project name. Example: code {path} &amp;&amp; wt -d {path}"
-                       Foreground="#888" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0" />
+                       Foreground="{DynamicResource SukiLowText}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0" />
 
             <TextBlock x:Name="WarningText" Grid.Row="5" Grid.Column="1"
-                       Foreground="#C62828" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"
+                       Foreground="{DynamicResource SukiDangerColor}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"
                        IsVisible="False" />
         </Grid>
 
@@ -95,7 +97,7 @@
                           ToolTip.Tip="Modifier keys held while pressing 1-9 to open a project from any app." />
                 <TextBlock Text="+ 1..9 opens the project from anywhere"
                            VerticalAlignment="Center" Margin="8,0,0,0"
-                           Foreground="#888" FontSize="12" />
+                           Foreground="{DynamicResource SukiLowText}" FontSize="12" />
             </StackPanel>
         </Grid>
 

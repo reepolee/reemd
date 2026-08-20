@@ -24,3 +24,16 @@ public class ProjectShortcut
     /// </summary>
     public string Terminal { get; set; } = "";
 }
+
+/// <summary>
+/// The per-repo project-shortcut settings, persisted as <c>.reemd/projects.json</c>
+/// in the markdown folder (which is the git repo). Carrying it in the repo means
+/// each repo shows its own shortcuts (and hotkey combo) automatically.
+/// </summary>
+public class ProjectShortcutSettings
+{
+    /// <summary>Modifier token for the global launch hotkey (see <see cref="ProjectHotkey"/>).</summary>
+    public string HotkeyToken { get; set; } = ProjectHotkey.DefaultToken;
+
+    public List<ProjectShortcut> Projects { get; set; } = [];
+}

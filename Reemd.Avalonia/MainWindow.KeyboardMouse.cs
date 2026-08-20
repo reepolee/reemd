@@ -33,6 +33,7 @@ public partial class MainWindow
         if (_editorScrollViewer != null)
             await AnimateEditorScroll(0);
         Editor.CaretIndex = 0;
+        EnsureCaretVisible();
     }
 
     private async void ScrollEditorToBottom()
@@ -40,6 +41,32 @@ public partial class MainWindow
         if (_editorScrollViewer != null)
             await AnimateEditorScroll(ScrollableHeight(_editorScrollViewer));
         Editor.CaretIndex = Editor.Text?.Length ?? 0;
+        EnsureCaretVisible();
+    }
+
+    /// <summary>
+    /// Extends the selection from the current caret to the start or end of the
+    /// document (Shift+Ctrl+Home/End), keeping the opposite selection end fixed and
+    /// scrolling the caret into view at the document edge.
+    /// </summary>
+    private async void ExtendSelectionToDocumentEdge(bool toStart)
+    {
+        var caretIndex = Editor.CaretIndex;
+        var target = toStart ? 0 : (Editor.Text?.Length ?? 0);
+
+        // The end of the selection opposite the caret stays fixed. Compute it before
+        // changing the caret — Avalonia collapses the selection whenever CaretIndex
+        // changes, so the range is re-established afterwards (like Shift+PageUp/PageDown).
+        var anchor = caretIndex == Editor.SelectionEnd ? Editor.SelectionStart : Editor.SelectionEnd;
+        Editor.CaretIndex = target;
+        Editor.SelectionStart = Math.Min(anchor, target);
+        Editor.SelectionEnd = Math.Max(anchor, target);
+
+        // Scroll to the edge and reveal the caret. Note: unlike ScrollEditorToTop/
+        // Bottom, we must NOT reset the caret here or the selection would collapse.
+        if (_editorScrollViewer != null)
+            await AnimateEditorScroll(toStart ? 0 : ScrollableHeight(_editorScrollViewer));
+        EnsureCaretVisible();
     }
 
     /// <summary>
@@ -280,17 +307,19 @@ public partial class MainWindow
         // PageDown / PageUp — page the editor by one viewport height.
         // Handled explicitly because Avalonia's built-in TextBox paging is
         // unreliable on macOS for the dedicated Page Up / Page Down keys.
-        if (e.KeyModifiers == KeyModifiers.None)
+        // Shift+PageUp/PageDown extends the selection (the caret still follows
+        // the scroll so it stays visible).
+        if (e.KeyModifiers is KeyModifiers.None or KeyModifiers.Shift)
         {
             if (e.Key == Key.PageDown)
             {
-                PageEditor(+1);
+                PageEditor(+1, e.KeyModifiers == KeyModifiers.Shift);
                 e.Handled = true;
                 return;
             }
             if (e.Key == Key.PageUp)
             {
-                PageEditor(-1);
+                PageEditor(-1, e.KeyModifiers == KeyModifiers.Shift);
                 e.Handled = true;
                 return;
             }
@@ -299,11 +328,37 @@ public partial class MainWindow
         // Cmd+Up / Cmd+Down — page on the MacBook keyboard, which has no dedicated
         // Page keys. Avalonia's macOS backend drops the Fn modifier, so Fn+Up/Down
         // can't be detected; Cmd+arrow is the free, Mac-native alternative.
+        // Cmd+Shift+Up/Down extends the selection, like Shift+PageUp/PageDown.
         if (OperatingSystem.IsMacOS() &&
             (e.KeyModifiers & KeyModifiers.Meta) != 0 &&
             (e.Key == Key.Up || e.Key == Key.Down))
         {
-            PageEditor(e.Key == Key.Down ? +1 : -1);
+            PageEditor(e.Key == Key.Down ? +1 : -1, (e.KeyModifiers & KeyModifiers.Shift) != 0);
+            e.Handled = true;
+            return;
+        }
+
+        // Cmd+Home / Cmd+End — scroll to the document top/bottom with the caret kept
+        // visible (the Mac equivalent of Ctrl+Home/End; Avalonia's TextBox has no
+        // built-in Cmd+Home/End handling on macOS). Cmd+Shift+Home/End extends the
+        // selection to the document edge, like Shift+Ctrl+Home/End — reachable on
+        // Mac external keyboards that have Home/End keys.
+        if (OperatingSystem.IsMacOS() &&
+            (e.KeyModifiers & KeyModifiers.Meta) != 0 &&
+            (e.Key == Key.Home || e.Key == Key.End))
+        {
+            if ((e.KeyModifiers & KeyModifiers.Shift) != 0)
+            {
+                ExtendSelectionToDocumentEdge(e.Key == Key.Home);
+            }
+            else if (e.Key == Key.Home)
+            {
+                ScrollEditorToTop();
+            }
+            else
+            {
+                ScrollEditorToBottom();
+            }
             e.Handled = true;
             return;
         }
@@ -374,6 +429,25 @@ public partial class MainWindow
                 FindNext();
             e.Handled = true;
             return;
+        }
+
+        // Shift+Ctrl+Home / Shift+Ctrl+End — extend the selection to the start/end
+        // of the document (the caret stays visible, like Shift+PageUp/PageDown).
+        if ((e.KeyModifiers & KeyModifiers.Control) != 0 &&
+            (e.KeyModifiers & KeyModifiers.Shift) != 0)
+        {
+            if (e.Key == Key.Home)
+            {
+                ExtendSelectionToDocumentEdge(true);
+                e.Handled = true;
+                return;
+            }
+            if (e.Key == Key.End)
+            {
+                ExtendSelectionToDocumentEdge(false);
+                e.Handled = true;
+                return;
+            }
         }
 
         // Markdown formatting and editor shortcuts (exact Ctrl only)
