@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### Added
-- **Per-repo project shortcuts** — shortcut settings are saved to `.reemd/projects.json` inside the current repo, so opening another repo automatically loads that repo's shortcuts (and hotkey combo)
+- **Per-repo project shortcuts** — shortcut settings are saved to `reemd.projects.json` at the repo root, so opening another repo automatically loads that repo's shortcuts (and hotkey combo)
 - **Force git pull** — manual pull button (⬇️) in toolbar and `Ctrl+Shift+P` hotkey to pull latest changes from remote and reload editor if file changed on disk
 - **Auto-sync pull** — sync timer now pulls before pushing, keeping local and remote in sync across devices
 - Graceful reload on pull — only reloads editor file from disk if you have no unsaved changes (`_isDirty` check prevents clobbering active edits)

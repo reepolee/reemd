@@ -26,9 +26,11 @@ public class ProjectShortcut
 }
 
 /// <summary>
-/// The per-repo project-shortcut settings, persisted as <c>.reemd/projects.json</c>
-/// in the markdown folder (which is the git repo). Carrying it in the repo means
-/// each repo shows its own shortcuts (and hotkey combo) automatically.
+/// The per-repo project-shortcut settings, persisted as <c>reemd.projects.json</c>
+/// at the root of the markdown folder (which is the git repo). Carrying it in the
+/// repo means each repo shows its own shortcuts (and hotkey combo) automatically.
+/// A plain root-level filename keeps it out of reach of .gitignore patterns that
+/// hide dotfiles (e.g. <c>.*</c>) or subfolders (e.g. <c>.reemd/</c>).
 /// </summary>
 public class ProjectShortcutSettings
 {

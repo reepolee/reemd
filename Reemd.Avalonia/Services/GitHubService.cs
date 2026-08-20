@@ -198,6 +198,25 @@ public sealed class GitHubService
     }
 
     /// <summary>
+    /// Returns the .gitignore rule matching the given repo-relative path (e.g.
+    /// "reemd.projects.json"), or null when the path is not ignored or the folder
+    /// is not a git repo. Used to warn when a per-repo config file would not be
+    /// committed by the auto-sync (which runs <c>git add -A</c>).
+    /// </summary>
+    public async Task<string?> GetIgnoreRuleAsync(string markdownFolder, string relativePath)
+    {
+        var (exitCode, output, _) = await RunGitCommandAsync(
+            $"-C \"{markdownFolder}\" check-ignore -v -- \"{relativePath}\"", 15);
+        if (exitCode != 0 || string.IsNullOrWhiteSpace(output))
+            return null;
+
+        // Output looks like:  .gitignore:1:.*\treemd.projects.json
+        var rule = output.Trim();
+        var tab = rule.IndexOf('\t');
+        return tab > 0 ? rule[..tab] : rule;
+    }
+
+    /// <summary>
     /// Lists ALL repositories under the reepolee org whose name starts with "ree", fetched
     /// fresh from GitHub every call (not cached, not persisted) — used only by the dialog's
     /// "Reload" action to find repos never sent an issue to before.

@@ -165,10 +165,14 @@ folder in VS Code and a terminal in that folder. Launch with `Ctrl+Shift+<number
 globally, or just `<number>` while the editor is focused.
 
 Shortcut settings (the list **and** the hotkey combo) are stored per-repo in a
-`.reemd/projects.json` file at the root of the folder you're editing, so each repo
+`reemd.projects.json` file at the root of the folder you're editing, so each repo
 carries its own shortcuts and the toolbar adapts automatically when you open another
 repo. The file is committed by the regular GitHub auto-sync. If a repo has no such
-file yet, your most recently saved shortcuts are used as a fallback.
+file yet, your most recently saved shortcuts are used as a fallback. The filename is
+plain (no dot-prefix, no subfolder) specifically so common `.gitignore` patterns
+like `.*` or `.reemd/` can't hide it; if a repo's `.gitignore` still excludes it
+(e.g. `*.json`), Reemd shows a status-bar warning and the shortcuts stay local to
+that machine.
 
 ## License
 

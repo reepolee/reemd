@@ -21,8 +21,12 @@ public partial class MainWindow
 
     private readonly List<ProjectShortcut> _projectShortcuts = [];
 
-    /// <summary>Per-repo settings file (<c>.reemd/projects.json</c>) inside the current repo.</summary>
-    private string RepoProjectsFilePath => Path.Combine(_markdownFolder, ".reemd", "projects.json");
+    /// <summary>
+    /// Per-repo settings file at the repo root, committed by the git auto-sync.
+    /// A plain filename (no dot-prefix, no subfolder) so common .gitignore
+    /// patterns like <c>.*</c> or <c>.reemd/</c> can't hide it.
+    /// </summary>
+    private string RepoProjectsFilePath => Path.Combine(_markdownFolder, "reemd.projects.json");
 
     /// <summary>Local fallback file, used only for repos that don't have a config yet.</summary>
     private static readonly string LocalProjectsFilePath = Path.Combine(
@@ -48,28 +52,44 @@ public partial class MainWindow
                 // Per-repo config: also carries the hotkey modifier combo.
                 var settings = JsonSerializer.Deserialize<ProjectShortcutSettings>(
                     File.ReadAllText(RepoProjectsFilePath));
-                if (settings == null) return;
-
-                _projectHotkeyToken = settings.HotkeyToken;
-                sanitized = ApplyLoadedProjects(settings.Projects);
+                if (settings == null)
+                {
+                    // Corrupt per-repo config — treat as no config at all.
+                    ClearProjectShortcuts();
+                }
+                else
+                {
+                    _projectHotkeyToken = settings.HotkeyToken;
+                    sanitized = ApplyLoadedProjects(settings.Projects);
+                }
             }
             else if (File.Exists(LocalProjectsFilePath))
             {
                 // Legacy local file — fallback for repos without a config yet.
                 var list = JsonSerializer.Deserialize<List<ProjectShortcut>>(
                     File.ReadAllText(LocalProjectsFilePath));
-                if (list == null) return;
-
-                sanitized = ApplyLoadedProjects(list);
+                if (list == null)
+                {
+                    // Corrupt local fallback — treat as no config at all.
+                    ClearProjectShortcuts();
+                }
+                else
+                {
+                    sanitized = ApplyLoadedProjects(list);
+                }
             }
             else
             {
-                return;
+                // No config anywhere — this repo has no shortcuts of its own (and
+                // no fallback), so clear whatever the previous repo left behind
+                // instead of showing stale buttons.
+                ClearProjectShortcuts();
             }
         }
         catch
         {
-            // Best-effort — a corrupt projects file just means no buttons
+            // Best-effort — a corrupt/unreadable projects file just means no buttons.
+            ClearProjectShortcuts();
         }
 
         RebuildProjectButtons();
@@ -80,6 +100,42 @@ public partial class MainWindow
         // The shortcut count and hotkey combo can differ per repo — re-register
         // so the global hotkeys always match the repo that's currently open.
         ProjectShortcutsChanged?.Invoke();
+
+        WarnIfProjectsFileIgnored();
+    }
+
+    /// <summary>
+    /// Resets the shortcut list and the hotkey combo to their defaults. Used when
+    /// the current repo has no valid shortcut config, so a previous repo's toolbar
+    /// buttons and modifier combo don't linger.
+    /// </summary>
+    private void ClearProjectShortcuts()
+    {
+        _projectShortcuts.Clear();
+        _projectHotkeyToken = ProjectHotkey.DefaultToken;
+    }
+
+    /// <summary>
+    /// Warns in the status bar when the per-repo <c>reemd.projects.json</c> is
+    /// excluded by the repo's .gitignore — the auto-sync's <c>git add -A</c> would
+    /// silently skip it, so the shortcuts never travel with the repo (fresh clones
+    /// fall back to local settings instead).
+    /// </summary>
+    private async void WarnIfProjectsFileIgnored()
+    {
+        try
+        {
+            // Only meaningful once a per-repo file exists (or was just saved).
+            if (!File.Exists(RepoProjectsFilePath)) return;
+
+            var rule = await _gitHubService.GetIgnoreRuleAsync(_markdownFolder, "reemd.projects.json");
+            if (rule != null)
+                SetStatus($"⚠️ reemd.projects.json is gitignored ({rule}) — shortcuts won't sync to GitHub");
+        }
+        catch
+        {
+            // Best-effort — missing git install or transient failure just means no warning.
+        }
     }
 
     /// <summary>
@@ -129,14 +185,12 @@ public partial class MainWindow
         {
             var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
 
-            // Per-repo copy (.reemd/projects.json in the current repo) is the source
+            // Per-repo copy at the repo root (reemd.projects.json) is the source
             // of truth — it travels with the repo, so opening another repo shows
             // that repo's shortcuts automatically (and git sync commits it).
             if (Path.IsPathRooted(_markdownFolder) && Directory.Exists(_markdownFolder))
             {
-                var repoDir = Path.Combine(_markdownFolder, ".reemd");
-                Directory.CreateDirectory(repoDir);
-                File.WriteAllText(Path.Combine(repoDir, "projects.json"),
+                File.WriteAllText(RepoProjectsFilePath,
                     JsonSerializer.Serialize(new ProjectShortcutSettings
                     {
                         HotkeyToken = _projectHotkeyToken,
@@ -190,6 +244,7 @@ public partial class MainWindow
             RebuildProjectButtons();
             SetStatus($"{_projectShortcuts.Count} project shortcut(s)");
             ProjectShortcutsChanged?.Invoke();
+            WarnIfProjectsFileIgnored();
         }
     }
 
