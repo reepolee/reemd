@@ -42,6 +42,11 @@ public partial class ProjectEditDialog : Window
         _projects = projects.ToList();
         Result = _projects;
 
+        // Pre-fill the platform's default launch command for new entries, and show
+        // a matching example in the hint text under the Command field.
+        CommandTextBox.Text = DefaultCommandTemplate;
+        CommandHintText.Text = HintTextFor(CommandTextBox.Text);
+
         var terminalOptions = OperatingSystem.IsMacOS()
             ? new[]
             {
@@ -130,12 +135,28 @@ public partial class ProjectEditDialog : Window
         BtnMoveDown.IsEnabled = index >= 0 && index < _projects.Count - 1;
     }
 
+    /// <summary>
+    /// Default command pre-filled when adding a new project. Platform-specific:
+    /// Windows opens VSCode + Windows Terminal, macOS opens VSCode + iTerm, and
+    /// other platforms leave it empty (built-in launch applies).
+    /// </summary>
+    private static string DefaultCommandTemplate =>
+        OperatingSystem.IsWindows() ? "code {path} && wt -d {path}" :
+        OperatingSystem.IsMacOS() ? "code {path} && open -a iTerm {path}" : "";
+
+    /// <summary>Explanatory hint for the Command field, with the platform's example appended.</summary>
+    private static string HintTextFor(string command)
+    {
+        const string baseText = "Optional. Runs instead of the default VSCode + terminal launch. {path} = project folder, {name} = project name.";
+        return string.IsNullOrWhiteSpace(command) ? baseText : $"{baseText} Example: {command}";
+    }
+
     private void ClearFields()
     {
         _addingNew = true;
         NameTextBox.Text = "";
         PathTextBox.Text = "";
-        CommandTextBox.Text = "";
+        CommandTextBox.Text = DefaultCommandTemplate;
         TerminalCombo.SelectedValue = "";
         NameTextBox.Focus();
     }

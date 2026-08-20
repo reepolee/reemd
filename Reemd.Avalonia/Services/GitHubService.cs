@@ -199,9 +199,9 @@ public sealed class GitHubService
 
     /// <summary>
     /// Returns the .gitignore rule matching the given repo-relative path (e.g.
-    /// "reemd.projects.json"), or null when the path is not ignored or the folder
-    /// is not a git repo. Used to warn when a per-repo config file would not be
-    /// committed by the auto-sync (which runs <c>git add -A</c>).
+    /// "comet.win.reemd.projects.json"), or null when the path is not ignored or the
+    /// folder is not a git repo. Used to warn when a per-device config file would not
+    /// be committed by the auto-sync (which runs <c>git add -A</c>).
     /// </summary>
     public async Task<string?> GetIgnoreRuleAsync(string markdownFolder, string relativePath)
     {

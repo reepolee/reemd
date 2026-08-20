@@ -82,8 +82,8 @@ public partial class MainWindow
                 FileListBox.SelectedIndex = 0;
             }
 
-            // Load this repo's project shortcuts (reemd.projects.json) so the
-            // toolbar adapts to whichever repo is currently open.
+            // Load this device's project shortcuts for the repo ({device}.{platform}.reemd.projects.json)
+            // so the toolbar adapts to whichever repo is currently open.
             LoadProjectShortcuts();
         }
         catch (Exception ex)

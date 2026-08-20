@@ -26,11 +26,13 @@ public class ProjectShortcut
 }
 
 /// <summary>
-/// The per-repo project-shortcut settings, persisted as <c>reemd.projects.json</c>
-/// at the root of the markdown folder (which is the git repo). Carrying it in the
-/// repo means each repo shows its own shortcuts (and hotkey combo) automatically.
-/// A plain root-level filename keeps it out of reach of .gitignore patterns that
-/// hide dotfiles (e.g. <c>.*</c>) or subfolders (e.g. <c>.reemd/</c>).
+/// The per-device project-shortcut settings, persisted as
+/// <c>{device}.{platform}.reemd.projects.json</c> (e.g. <c>comet.win.reemd.projects.json</c>)
+/// at the root of the markdown folder (which is the git repo). Scoping by machine
+/// name + OS lets each device carry its own paths/commands without clobbering the
+/// others, while still being committed. A plain root-level filename keeps it out of
+/// reach of .gitignore patterns that hide dotfiles (e.g. <c>.*</c>) or subfolders
+/// (e.g. <c>.reemd/</c>).
 /// </summary>
 public class ProjectShortcutSettings
 {

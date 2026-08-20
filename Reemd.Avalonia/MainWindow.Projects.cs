@@ -22,11 +22,20 @@ public partial class MainWindow
     private readonly List<ProjectShortcut> _projectShortcuts = [];
 
     /// <summary>
-    /// Per-repo settings file at the repo root, committed by the git auto-sync.
-    /// A plain filename (no dot-prefix, no subfolder) so common .gitignore
-    /// patterns like <c>.*</c> or <c>.reemd/</c> can't hide it.
+    /// Per-device settings file at the repo root, committed by the git auto-sync.
+    /// Scoped by machine name + OS (e.g. <c>comet.win.reemd.projects.json</c>) so
+    /// each device carries its own paths/commands without clobbering the others. A
+    /// plain filename (no dot-prefix, no subfolder) so common .gitignore patterns
+    /// like <c>.*</c> or <c>.reemd/</c> can't hide it.
     /// </summary>
-    private string RepoProjectsFilePath => Path.Combine(_markdownFolder, "reemd.projects.json");
+    private string RepoProjectsFilePath => Path.Combine(
+        _markdownFolder, DeviceScope.FileName("reemd.projects"));
+
+    /// <summary>
+    /// Legacy shared per-repo file (<c>reemd.projects.json</c>), read once as a
+    /// migration fallback and deleted after the device-specific file is written.
+    /// </summary>
+    private string LegacyProjectsFilePath => Path.Combine(_markdownFolder, "reemd.projects.json");
 
     /// <summary>Local fallback file, used only for repos that don't have a config yet.</summary>
     private static readonly string LocalProjectsFilePath = Path.Combine(
@@ -45,16 +54,17 @@ public partial class MainWindow
     private void LoadProjectShortcuts()
     {
         var sanitized = false;
+        var migrateLegacy = false;
         try
         {
             if (File.Exists(RepoProjectsFilePath))
             {
-                // Per-repo config: also carries the hotkey modifier combo.
+                // Per-device config: also carries the hotkey modifier combo.
                 var settings = JsonSerializer.Deserialize<ProjectShortcutSettings>(
                     File.ReadAllText(RepoProjectsFilePath));
                 if (settings == null)
                 {
-                    // Corrupt per-repo config — treat as no config at all.
+                    // Corrupt per-device config — treat as no config at all.
                     ClearProjectShortcuts();
                 }
                 else
@@ -62,6 +72,23 @@ public partial class MainWindow
                     _projectHotkeyToken = settings.HotkeyToken;
                     sanitized = ApplyLoadedProjects(settings.Projects);
                 }
+            }
+            else if (File.Exists(LegacyProjectsFilePath))
+            {
+                // Legacy shared config (reemd.projects.json): adopt it for this
+                // device, then save the device-specific file and delete the shared one.
+                var settings = JsonSerializer.Deserialize<ProjectShortcutSettings>(
+                    File.ReadAllText(LegacyProjectsFilePath));
+                if (settings == null)
+                {
+                    ClearProjectShortcuts();
+                }
+                else
+                {
+                    _projectHotkeyToken = settings.HotkeyToken;
+                    sanitized = ApplyLoadedProjects(settings.Projects);
+                }
+                migrateLegacy = true;
             }
             else if (File.Exists(LocalProjectsFilePath))
             {
@@ -94,14 +121,34 @@ public partial class MainWindow
 
         RebuildProjectButtons();
 
-        if (sanitized)
+        if (sanitized || migrateLegacy)
             SaveProjectShortcuts();
+
+        // A migrated legacy file is superseded by the device-specific file written
+        // above; drop the shared copy so other devices don't keep reading it.
+        if (migrateLegacy)
+            TryDeleteLegacyProjectsFile();
 
         // The shortcut count and hotkey combo can differ per repo — re-register
         // so the global hotkeys always match the repo that's currently open.
         ProjectShortcutsChanged?.Invoke();
 
         WarnIfProjectsFileIgnored();
+    }
+
+    /// <summary>Removes the legacy shared <c>reemd.projects.json</c> after migration.</summary>
+    private void TryDeleteLegacyProjectsFile()
+    {
+        try
+        {
+            if (File.Exists(LegacyProjectsFilePath))
+                File.Delete(LegacyProjectsFilePath);
+        }
+        catch
+        {
+            // Best-effort — the shared file may be read-only or locked; the next
+            // load retries the migration.
+        }
     }
 
     /// <summary>
@@ -116,21 +163,22 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// Warns in the status bar when the per-repo <c>reemd.projects.json</c> is
-    /// excluded by the repo's .gitignore — the auto-sync's <c>git add -A</c> would
-    /// silently skip it, so the shortcuts never travel with the repo (fresh clones
-    /// fall back to local settings instead).
+    /// Warns in the status bar when the per-device projects file is excluded by the
+    /// repo's .gitignore — the auto-sync's <c>git add -A</c> would silently skip it,
+    /// so the shortcuts never travel with the repo (fresh clones fall back to local
+    /// settings instead).
     /// </summary>
     private async void WarnIfProjectsFileIgnored()
     {
         try
         {
-            // Only meaningful once a per-repo file exists (or was just saved).
+            // Only meaningful once a per-device file exists (or was just saved).
             if (!File.Exists(RepoProjectsFilePath)) return;
 
-            var rule = await _gitHubService.GetIgnoreRuleAsync(_markdownFolder, "reemd.projects.json");
+            var fileName = Path.GetFileName(RepoProjectsFilePath);
+            var rule = await _gitHubService.GetIgnoreRuleAsync(_markdownFolder, fileName);
             if (rule != null)
-                SetStatus($"⚠️ reemd.projects.json is gitignored ({rule}) — shortcuts won't sync to GitHub");
+                SetStatus($"⚠️ {fileName} is gitignored ({rule}) — shortcuts won't sync to GitHub");
         }
         catch
         {
@@ -185,9 +233,9 @@ public partial class MainWindow
         {
             var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
 
-            // Per-repo copy at the repo root (reemd.projects.json) is the source
-            // of truth — it travels with the repo, so opening another repo shows
-            // that repo's shortcuts automatically (and git sync commits it).
+            // Per-device copy at the repo root ({device}.{platform}.reemd.projects.json)
+            // is the source of truth — it travels with the repo, so each machine keeps
+            // its own shortcuts (and git sync commits them all).
             if (Path.IsPathRooted(_markdownFolder) && Directory.Exists(_markdownFolder))
             {
                 File.WriteAllText(RepoProjectsFilePath,

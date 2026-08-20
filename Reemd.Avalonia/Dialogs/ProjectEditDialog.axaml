@@ -80,8 +80,7 @@
             <TextBlock Grid.Row="3" Grid.Column="0" Text="Command:" VerticalAlignment="Center" Margin="0,6,6,0" />
             <TextBox x:Name="CommandTextBox" Grid.Row="3" Grid.Column="1" Margin="0,6,0,0" Padding="3"
                      ToolTip.Tip="Optional custom command. {path} = project folder, {name} = project name. Leave empty for VSCode + terminal." />
-            <TextBlock Grid.Row="4" Grid.Column="1"
-                       Text="Optional. Runs instead of the default VSCode + terminal launch. {path} = project folder, {name} = project name. Example: code {path} &amp;&amp; wt -d {path}"
+            <TextBlock x:Name="CommandHintText" Grid.Row="4" Grid.Column="1"
                        Foreground="{DynamicResource SukiLowText}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0" />
 
             <TextBlock x:Name="WarningText" Grid.Row="5" Grid.Column="1"

@@ -3,7 +3,8 @@
 ## [Unreleased]
 
 ### Added
-- **Per-repo project shortcuts** — shortcut settings are saved to `reemd.projects.json` at the repo root, so opening another repo automatically loads that repo's shortcuts (and hotkey combo)
+- **Per-device project shortcuts** — shortcut settings are saved to a `<device>.<os>.reemd.projects.json` file (e.g. `comet.win.reemd.projects.json`) at the repo root, so each machine keeps its own paths/commands and opening another repo automatically loads your device's shortcuts (and hotkey combo)
+- **Platform default command** — new project shortcuts pre-fill a platform-appropriate launch command (`code {path} && wt -d {path}` on Windows, `code {path} && open -a iTerm {path}` on macOS)
 - **Force git pull** — manual pull button (⬇️) in toolbar and `Ctrl+Shift+P` hotkey to pull latest changes from remote and reload editor if file changed on disk
 - **Auto-sync pull** — sync timer now pulls before pushing, keeping local and remote in sync across devices
 - Graceful reload on pull — only reloads editor file from disk if you have no unsaved changes (`_isDirty` check prevents clobbering active edits)

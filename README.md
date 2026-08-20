@@ -164,15 +164,23 @@ Add up to 9 shortcuts via the ⚙ button in the toolbar. Each shortcut opens a p
 folder in VS Code and a terminal in that folder. Launch with `Ctrl+Shift+<number>`
 globally, or just `<number>` while the editor is focused.
 
-Shortcut settings (the list **and** the hotkey combo) are stored per-repo in a
-`reemd.projects.json` file at the root of the folder you're editing, so each repo
-carries its own shortcuts and the toolbar adapts automatically when you open another
-repo. The file is committed by the regular GitHub auto-sync. If a repo has no such
-file yet, your most recently saved shortcuts are used as a fallback. The filename is
-plain (no dot-prefix, no subfolder) specifically so common `.gitignore` patterns
-like `.*` or `.reemd/` can't hide it; if a repo's `.gitignore` still excludes it
-(e.g. `*.json`), Reemd shows a status-bar warning and the shortcuts stay local to
-that machine.
+Shortcut settings (the list **and** the hotkey combo) are stored per-device in a
+`<device>.<os>.reemd.projects.json` file at the root of the folder you're editing
+(e.g. `comet.win.reemd.projects.json`, `m4mini.macos.reemd.projects.json`), so each
+machine keeps its own paths and commands (Windows vs macOS terminal launchers) while
+every device's file is committed by the regular GitHub auto-sync. When you open a
+repo, Reemd loads *your* device's file, so the toolbar adapts automatically. A legacy
+shared `reemd.projects.json` (from before this change) is adopted once and then
+deleted. If a repo has no config for your device yet, your most recently saved
+shortcuts are used as a fallback. The filename is plain (no dot-prefix, no subfolder)
+specifically so common `.gitignore` patterns like `.*` or `.reemd/` can't hide it; if
+a repo's `.gitignore` still excludes it (e.g. `*.json`), Reemd shows a status-bar
+warning and the shortcuts stay local to that machine.
+
+New shortcuts pre-fill a platform-appropriate command — `code {path} && wt -d {path}`
+on Windows, `code {path} && open -a iTerm {path}` on macOS — which you can clear to
+fall back to Reemd's built-in VSCode + terminal launch (which actually `cd`s into the
+folder).
 
 ## License
 
