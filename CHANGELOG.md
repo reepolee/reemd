@@ -10,6 +10,7 @@
 - Graceful reload on pull — only reloads editor file from disk if you have no unsaved changes (`_isDirty` check prevents clobbering active edits)
 
 ### Fixed
+- Pinned files now sort by most recently updated, while unpinned files remain alphabetically ordered
 - Sync now pulls first before pushing, avoiding conflicts when working on multiple devices
 - PageUp/PageDown now move the editor caret along with the scroll, so the cursor stays visible and you can keep typing immediately (Shift+PageUp/PageDown or Cmd+Shift+Up/Down on MacBook keyboards extends the selection; the caret is also revealed horizontally after paging on long unwrapped lines)
 - Ctrl+Home/Ctrl+End (and the toolbar scroll buttons) now keep the caret visible after scrolling to the top/bottom of the document, including horizontal reveal on long unwrapped lines

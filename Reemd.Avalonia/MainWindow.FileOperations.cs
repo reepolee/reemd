@@ -231,6 +231,9 @@ public partial class MainWindow
 
         var sorted = _fileList
             .OrderByDescending(f => f.IsPinned ? 1 : 0)
+            .ThenByDescending(f => f.IsPinned
+                ? File.GetLastWriteTime(Path.Combine(_markdownFolder, f.Name))
+                : DateTime.MinValue)
             .ThenBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 

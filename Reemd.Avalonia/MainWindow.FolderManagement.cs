@@ -57,6 +57,9 @@ public partial class MainWindow
 
             var files = Directory.GetFiles(_markdownFolder, Config.MarkdownFilter)
                 .OrderByDescending(f => _pinnedFilenames.Contains(Path.GetFileName(f)) ? 1 : 0)
+                .ThenByDescending(f => _pinnedFilenames.Contains(Path.GetFileName(f))
+                    ? File.GetLastWriteTime(f)
+                    : DateTime.MinValue)
                 .ThenBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
@@ -177,6 +180,9 @@ public partial class MainWindow
 
             var orderedFiles = Directory.GetFiles(_markdownFolder, Config.MarkdownFilter)
                 .OrderByDescending(f => _pinnedFilenames.Contains(Path.GetFileName(f)) ? 1 : 0)
+                .ThenByDescending(f => _pinnedFilenames.Contains(Path.GetFileName(f))
+                    ? File.GetLastWriteTime(f)
+                    : DateTime.MinValue)
                 .ThenBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
