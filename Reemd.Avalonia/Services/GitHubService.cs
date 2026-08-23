@@ -276,7 +276,30 @@ public sealed class GitHubService
     /// </summary>
     private static async Task<(int ExitCode, string StdOut, string StdErr)> RunGhCommandAsync(string arguments, int timeoutSeconds = 15)
     {
-        return await RunProcessAsync(GhExe, arguments, timeoutSeconds);
+        var ghExecutable = GetGhExecutable();
+        return await RunProcessAsync(ghExecutable, arguments, timeoutSeconds);
+    }
+
+    /// <summary>
+    /// Resolves GitHub CLI for macOS GUI launches, whose PATH often omits Homebrew.
+    /// </summary>
+    private static string GetGhExecutable()
+    {
+        if (!OperatingSystem.IsMacOS()) return GhExe;
+
+        var candidates = new[]
+        {
+            "/opt/homebrew/bin/gh",
+            "/usr/local/bin/gh"
+        };
+
+        foreach (var candidate in candidates)
+        {
+            if (File.Exists(candidate))
+                return candidate;
+        }
+
+        return GhExe;
     }
 
     /// <summary>

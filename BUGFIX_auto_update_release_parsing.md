@@ -26,6 +26,20 @@ ReeMD reported that GitHub CLI was not authenticated while Git operations worked
 
 Authentication validation now combines both streams before checking the GitHub CLI status and extracting the active account name.
 
+## GitHub CLI path in macOS apps
+
+### Symptom
+
+ReeMD reported that GitHub CLI was not authenticated even though `gh auth status` succeeded in Terminal.
+
+### Cause
+
+macOS applications launched from Finder do not inherit Homebrew's PATH. ReeMD could not find the installed `gh` executable.
+
+### Fix
+
+ReeMD now resolves GitHub CLI from Homebrew's Apple Silicon and Intel installation locations before running its authentication check.
+
 ## Update archive lock
 
 ### Symptom
