@@ -43,6 +43,8 @@
                     <Border Width="1" Height="18" Background="#C0C0C0" Margin="6,0" />
                     <Button x:Name="BtnPull" Content="⬇️ Pull" ToolTip.Tip="Pull latest changes from remote (Ctrl+Shift+P)" Click="BtnPull_Click" />
                     <Border Width="1" Height="18" Background="#C0C0C0" Margin="6,0" />
+                    <Button x:Name="BtnUpdateApp" Content="⬆ Update" ToolTip.Tip="Check for and install the latest ReeMD release" Click="BtnUpdateApp_Click" />
+                    <Border Width="1" Height="18" Background="#C0C0C0" Margin="6,0" />
                     <Button x:Name="BtnNewIssue" Content="🐛 New Issue" ToolTip.Tip="Create a new GitHub issue (Ctrl+Alt+I)" Click="BtnNewIssue_Click" />
                 </StackPanel>
 

@@ -1,0 +1,18 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Reemd.Dialogs.UpdateDialog"
+        x:CompileBindings="False"
+        Title="Update ReeMD"
+        Width="420" Height="190"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        FontSize="14">
+    <Grid Margin="24,20" RowDefinitions="Auto,*,Auto">
+        <TextBlock x:Name="MessageText" TextWrapping="Wrap" />
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button Content="Cancel" IsCancel="True" Padding="14,4" Click="Cancel_Click" />
+            <Button Content="Install and Restart" IsDefault="True" Padding="14,4" Click="Install_Click" />
+        </StackPanel>
+    </Grid>
+</Window>
