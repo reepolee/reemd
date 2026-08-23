@@ -78,13 +78,14 @@ public sealed class GitHubService
     {
         try
         {
-            var (exitCode, output, _) = await RunGhCommandAsync("auth status");
-            IsAuthenticated = exitCode == 0 && output.Contains("Logged in to", StringComparison.OrdinalIgnoreCase);
+            var (exitCode, output, error) = await RunGhCommandAsync("auth status");
+            var authOutput = string.Concat(output, Environment.NewLine, error);
+            IsAuthenticated = exitCode == 0 && authOutput.Contains("Logged in to", StringComparison.OrdinalIgnoreCase);
 
             if (IsAuthenticated)
             {
                 // Extract the username from e.g. "Logged in to github.com account <user> (keyring)"
-                var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                var lines = authOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                 foreach (var line in lines)
                 {
                     if (line.Contains("Logged in to", StringComparison.OrdinalIgnoreCase))
