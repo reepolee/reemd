@@ -52,4 +52,4 @@ The left and right toolbar groups shared one fixed row without overflow handling
 
 ### Fix
 
-The toolbar now wraps its controls onto additional rows when they do not fit.
+The action controls wrap within the toolbar's left column, while project shortcuts remain right-aligned in their original column.
