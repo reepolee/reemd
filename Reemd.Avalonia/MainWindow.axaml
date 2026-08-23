@@ -17,44 +17,36 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Toolbar: left group (folder + editor actions), right group (project shortcuts) -->
+        <!-- Toolbar wraps controls onto additional rows when space is constrained. -->
         <Border Grid.Row="0" x:Name="ToolbarBorder"
                 Background="#F6F6F6" BorderBrush="#D0D0D0" BorderThickness="0,0,0,1"
                 Padding="4,3">
-            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-                <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-
-                <!-- Left: existing toolbar items -->
-                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Spacing="6">
-                    <TextBlock Text="Folder:" VerticalAlignment="Center" />
-                    <TextBox x:Name="FolderCombo" MinWidth="200"
+            <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <WrapPanel Orientation="Horizontal">
+                    <TextBlock Text="Folder:" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <TextBox x:Name="FolderCombo" MinWidth="200" Margin="0,0,6,0"
                              ToolTip.Tip="Path to folder with .md files"
                              LostFocus="FolderCombo_LostFocus"
                              KeyDown="FolderCombo_KeyDown"
                              Text="." />
-                    <Button x:Name="BtnBrowse" Content="Browse" Click="Browse_Click" />
+                    <Button x:Name="BtnBrowse" Content="Browse" Margin="0,0,6,0" Click="Browse_Click" />
                     <Border Width="1" Height="18" Background="#C0C0C0" Margin="6,0" />
-                    <Button x:Name="BtnOpenFolder" Content="📂" ToolTip.Tip="Open folder in File Explorer" Click="BtnOpenFolder_Click" />
+                    <Button x:Name="BtnOpenFolder" Content="📂" Margin="0,0,6,0" ToolTip.Tip="Open folder in File Explorer" Click="BtnOpenFolder_Click" />
                     <Border Width="1" Height="18" Background="#C0C0C0" Margin="6,0" />
-                    <ToggleButton x:Name="BtnToggleTheme" Content="🌙" ToolTip.Tip="Toggle dark/light theme" Click="BtnToggleTheme_Click" />
+                    <ToggleButton x:Name="BtnToggleTheme" Content="🌙" Margin="0,0,6,0" ToolTip.Tip="Toggle dark/light theme" Click="BtnToggleTheme_Click" />
                     <Border Width="1" Height="18" Background="#C0C0C0" Margin="6,0" />
-                    <Button x:Name="BtnPull" Content="⬇️ Pull" ToolTip.Tip="Pull latest changes from remote (Ctrl+Shift+P)" Click="BtnPull_Click" />
+                    <Button x:Name="BtnPull" Content="⬇️ Pull" Margin="0,0,6,0" ToolTip.Tip="Pull latest changes from remote (Ctrl+Shift+P)" Click="BtnPull_Click" />
                     <Border Width="1" Height="18" Background="#C0C0C0" Margin="6,0" />
-                    <Button x:Name="BtnUpdateApp" Content="⬆ Update" ToolTip.Tip="Check for and install the latest ReeMD release" Click="BtnUpdateApp_Click" />
+                    <Button x:Name="BtnUpdateApp" Content="⬆ Update" Margin="0,0,6,0" ToolTip.Tip="Check for and install the latest ReeMD release" Click="BtnUpdateApp_Click" />
                     <Border Width="1" Height="18" Background="#C0C0C0" Margin="6,0" />
-                    <Button x:Name="BtnNewIssue" Content="🐛 New Issue" ToolTip.Tip="Create a new GitHub issue (Ctrl+Alt+I)" Click="BtnNewIssue_Click" />
-                </StackPanel>
+                    <Button x:Name="BtnNewIssue" Content="🐛 New Issue" Margin="0,0,6,0" ToolTip.Tip="Create a new GitHub issue (Ctrl+Alt+I)" Click="BtnNewIssue_Click" />
+                </WrapPanel>
 
-                <!-- Right: project shortcut buttons, justified to the end -->
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Spacing="2">
+                <WrapPanel Orientation="Horizontal">
                     <ItemsControl x:Name="ProjectButtonsHost">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
-                                <StackPanel Orientation="Horizontal" />
+                                <WrapPanel Orientation="Horizontal" />
                             </ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
@@ -69,9 +61,8 @@
                     <Button x:Name="BtnEditProjects" Content="⚙" Padding="6,2" Margin="2,0,2,0"
                             ToolTip.Tip="Edit project shortcut buttons"
                             Click="BtnEditProjects_Click" />
-                </StackPanel>
-                </Grid>
-            </ScrollViewer>
+                </WrapPanel>
+            </WrapPanel>
         </Border>
 
         <!-- Main content area -->

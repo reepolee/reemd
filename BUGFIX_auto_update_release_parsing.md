@@ -52,4 +52,4 @@ The left and right toolbar groups shared one fixed row without overflow handling
 
 ### Fix
 
-The toolbar now scrolls horizontally when its controls do not fit.
+The toolbar now wraps its controls onto additional rows when they do not fit.
