@@ -64,9 +64,11 @@ public static class AutoUpdateService
         using var response = await HttpClient.GetAsync(release.DownloadUrl, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
 
-        await using var archiveStream = await response.Content.ReadAsStreamAsync();
-        await using var outputStream = File.Create(archivePath);
-        await archiveStream.CopyToAsync(outputStream);
+        await using (var archiveStream = await response.Content.ReadAsStreamAsync())
+        await using (var outputStream = File.Create(archivePath))
+        {
+            await archiveStream.CopyToAsync(outputStream);
+        }
 
         ZipFile.ExtractToDirectory(archivePath, extractedPath);
 

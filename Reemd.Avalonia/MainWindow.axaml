@@ -21,7 +21,8 @@
         <Border Grid.Row="0" x:Name="ToolbarBorder"
                 Background="#F6F6F6" BorderBrush="#D0D0D0" BorderThickness="0,0,0,1"
                 Padding="4,3">
-            <Grid>
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
@@ -69,7 +70,8 @@
                             ToolTip.Tip="Edit project shortcut buttons"
                             Click="BtnEditProjects_Click" />
                 </StackPanel>
-            </Grid>
+                </Grid>
+            </ScrollViewer>
         </Border>
 
         <!-- Main content area -->
