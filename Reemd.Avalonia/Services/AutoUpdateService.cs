@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Reemd.Services;
 
@@ -186,6 +187,7 @@ public static class AutoUpdateService
 
     private sealed class GitHubRelease
     {
+        [JsonPropertyName("tag_name")]
         public string TagName { get; init; } = string.Empty;
         public List<GitHubAsset> Assets { get; init; } = [];
     }
@@ -193,6 +195,8 @@ public static class AutoUpdateService
     private sealed class GitHubAsset
     {
         public string Name { get; init; } = string.Empty;
+
+        [JsonPropertyName("browser_download_url")]
         public string BrowserDownloadUrl { get; init; } = string.Empty;
     }
 }
