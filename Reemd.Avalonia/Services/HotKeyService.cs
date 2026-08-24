@@ -31,6 +31,7 @@ public sealed class HotKeyService : IDisposable
     private const uint MOD_CONTROL = 0x0002;
     private const uint MOD_SHIFT = 0x0004;
     private const uint MOD_WIN = 0x0008;
+    private const uint MOD_NOREPEAT = 0x4000;
 
     // Carbon modifier flags
     private const uint CMD_KEY = 1u << 8;      // 256
@@ -115,6 +116,10 @@ public sealed class HotKeyService : IDisposable
         if ((m & HotKeyModifiers.Control) != 0) result |= MOD_CONTROL;
         if ((m & HotKeyModifiers.Shift) != 0) result |= MOD_SHIFT;
         if ((m & HotKeyModifiers.Meta) != 0) result |= MOD_WIN;
+        // Stop keyboard auto-repeat from firing the hotkey repeatedly. Without this,
+        // holding Ctrl+Shift+Space long enough to repeat toggles the window on and
+        // then straight back off again.
+        if (result != 0) result |= MOD_NOREPEAT;
         return result;
     }
 
