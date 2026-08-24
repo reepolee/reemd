@@ -165,25 +165,50 @@ public static class AutoUpdateService
     private static void StartWindowsInstaller(int processId, StagedUpdate update)
     {
         var scriptPath = Path.Combine(Path.GetTempPath(), $"Reemd-install-{Guid.NewGuid():N}.cmd");
+        var logPath = Path.Combine(Path.GetTempPath(), $"Reemd-update-{Guid.NewGuid():N}.log");
         var script = "@echo off\r\n" +
+            "set LOG=\"" + logPath + "\"\r\n" +
+            "echo [%%date%% %%time%%] Waiting for PID %1... >> %LOG% 2>&1\r\n" +
             ":wait\r\n" +
             "tasklist /FI \"PID eq %1\" 2>NUL | find \"%1\" >NUL\r\n" +
             "if not errorlevel 1 (\r\n" +
             "  timeout /t 1 /nobreak >NUL\r\n" +
             "  goto wait\r\n" +
             ")\r\n" +
-            "rmdir /s /q \"%~2\"\r\n" +
-            "move \"%~3\" \"%~2\"\r\n" +
-            "start \"\" \"%~2\\Reemd.exe\"\r\n" +
+            "echo [%%date%% %%time%%] Process exited, removing old install... >> %LOG% 2>&1\r\n" +
+            ":retry_rmdir\r\n" +
+            "rmdir /s /q \"%~2\" 2>> %LOG%\r\n" +
+            "if exist \"%~2\" (\r\n" +
+            "  echo [%%date%% %%time%%] Directory still exists, retrying in 1s... >> %LOG%\r\n" +
+            "  timeout /t 1 /nobreak >NUL\r\n" +
+            "  goto retry_rmdir\r\n" +
+            ")\r\n" +
+            "echo [%%date%% %%time%%] Moving staged update... >> %LOG% 2>&1\r\n" +
+            "move \"%~3\" \"%~2\" >> %LOG% 2>&1\r\n" +
+            "if errorlevel 1 (\r\n" +
+            "  echo [%%date%% %%time%%] ERROR: move failed >> %LOG% 2>&1\r\n" +
+            "  pause\r\n" +
+            "  exit /b 1\r\n" +
+            ")\r\n" +
+            "echo [%%date%% %%time%%] Starting new version... >> %LOG% 2>&1\r\n" +
+            "start \"\" \"%~2\\Reemd.exe\" >> %LOG% 2>&1\r\n" +
+            "echo [%%date%% %%time%%] Done. >> %LOG% 2>&1\r\n" +
             "del \"%~f0\"\r\n";
         File.WriteAllText(scriptPath, script);
 
-        var startInfo = new ProcessStartInfo("cmd.exe") { UseShellExecute = false };
-        startInfo.ArgumentList.Add("/c");
-        startInfo.ArgumentList.Add(scriptPath);
-        startInfo.ArgumentList.Add(processId.ToString());
-        startInfo.ArgumentList.Add(update.InstallPath);
-        startInfo.ArgumentList.Add(update.StagedPath);
+        // UseShellExecute = true spawns the installer via ShellExecuteEx, which
+        // creates a truly independent process that won't be killed when Reemd.exe
+        // exits — even if the parent is inside a job object with KILL_ON_CLOSE.
+        // ArgumentList doesn't work with UseShellExecute, so we build the
+        // arguments string manually with proper quoting for paths that may
+        // contain spaces.
+        var args = $"/c \"{scriptPath}\" {processId} \"{update.InstallPath}\" \"{update.StagedPath}\"";
+        var startInfo = new ProcessStartInfo("cmd.exe")
+        {
+            UseShellExecute = true,
+            WindowStyle = ProcessWindowStyle.Hidden,
+            Arguments = args
+        };
         Process.Start(startInfo);
     }
 
