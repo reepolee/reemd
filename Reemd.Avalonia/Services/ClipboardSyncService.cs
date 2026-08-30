@@ -27,6 +27,7 @@ public sealed class ClipboardSyncService : IDisposable
     private readonly List<UdpClient> _udpClients = [];
     private UdpClient? _broadcastReceiver;
     private CancellationTokenSource? _cancellationTokenSource;
+    private long _pollSuspendedUntil;
 
     public event Action<string>? StatusChanged;
 
@@ -100,6 +101,25 @@ public sealed class ClipboardSyncService : IDisposable
         Start();
     }
 
+    /// <summary>
+    /// Defers system clipboard access while the host application is handling text input.
+    /// </summary>
+    public void SuspendPolling(TimeSpan duration)
+    {
+        var suspendedUntil = Environment.TickCount64 + (long)duration.TotalMilliseconds;
+        var currentSuspendedUntil = Volatile.Read(ref _pollSuspendedUntil);
+        while (suspendedUntil > currentSuspendedUntil)
+        {
+            var previousSuspendedUntil = Interlocked.CompareExchange(
+                ref _pollSuspendedUntil,
+                suspendedUntil,
+                currentSuspendedUntil);
+            if (previousSuspendedUntil == currentSuspendedUntil) return;
+
+            currentSuspendedUntil = previousSuspendedUntil;
+        }
+    }
+
     public void Stop()
     {
         lock (_lifecycleLock)
@@ -130,6 +150,8 @@ public sealed class ClipboardSyncService : IDisposable
         {
             while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
             {
+                if (Environment.TickCount64 < Volatile.Read(ref _pollSuspendedUntil)) continue;
+
                 await SendChangedClipboardAsync(cancellationToken).ConfigureAwait(false);
             }
         }

@@ -130,6 +130,10 @@ public partial class MainWindow
         _isDirty = true;
         UpdateSavedIndicator(false);
 
+        // macOS pasteboard APIs can block while native text editing is in progress.
+        // Wait until input is idle before checking the system clipboard again.
+        _clipboardSyncService.SuspendPolling(TimeSpan.FromSeconds(2));
+
         // Reset auto-save timer
         _autoSaveTimer.Stop();
         _autoSaveTimer.Start();
