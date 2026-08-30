@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Reflection;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -93,6 +94,7 @@ public partial class MainWindow : SukiWindow
     public MainWindow(string? startupFolder)
     {
         InitializeComponent();
+        Title = $"ReeMD v{GetAppVersion()} - Markdown Editor";
 
         // SukiWindow's theme sets BorderOnly on macOS, which drops the native
         // traffic-light buttons (no closable/miniaturizable style mask). Prefer the
@@ -205,6 +207,17 @@ public partial class MainWindow : SukiWindow
         Activated += (_, _) => ScheduleGitHubSync();
 
         _ = CheckGitHubAuthAsync();
+    }
+
+    private static string GetAppVersion()
+    {
+        var assembly = typeof(MainWindow).Assembly;
+        var attribute = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>();
+        var informational_version = attribute?.InformationalVersion;
+        if (string.IsNullOrWhiteSpace(informational_version)) return string.Empty;
+
+        var source_link_separator = informational_version.IndexOf('+');
+        return source_link_separator >= 0 ? informational_version[..source_link_separator] : informational_version;
     }
 
     private void OnWindowLoaded(object? sender, RoutedEventArgs e)
