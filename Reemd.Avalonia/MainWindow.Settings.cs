@@ -1,6 +1,7 @@
 using System.IO;
 using Avalonia.Controls;
 using Reemd.Models;
+using Reemd.Services;
 
 namespace Reemd;
 
@@ -88,6 +89,11 @@ public partial class MainWindow
                     case "ProjectHotkeyModifiers":
                         _projectHotkeyToken = parts[1].Trim();
                         break;
+                    case "ClipboardChannel":
+                        var clipboardChannel = parts[1].Trim();
+                        if (ClipboardSyncService.IsValidChannel(clipboardChannel))
+                            _clipboardChannel = clipboardChannel;
+                        break;
                 }
             }
 
@@ -140,6 +146,7 @@ public partial class MainWindow
                 $"DarkMode={_isDarkMode}",
                 $"WordWrapEnabled={_wordWrapEnabled}",
                 $"ProjectHotkeyModifiers={_projectHotkeyToken}",
+                $"ClipboardChannel={_clipboardChannel}",
             };
 
             foreach (var kvp in _scrollRatios)
@@ -216,4 +223,35 @@ public partial class MainWindow
     }
 
     #endregion
+
+    private void ClipboardChannelBox_LostFocus(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        UpdateClipboardChannel();
+    }
+
+    private void ClipboardChannelBox_KeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
+    {
+        if (e.Key != Avalonia.Input.Key.Enter) return;
+
+        UpdateClipboardChannel();
+        Editor.Focus();
+    }
+
+    private void UpdateClipboardChannel()
+    {
+        var clipboardChannel = ClipboardChannelBox.Text?.Trim() ?? string.Empty;
+        if (!ClipboardSyncService.IsValidChannel(clipboardChannel))
+        {
+            ClipboardChannelBox.Text = _clipboardChannel;
+            SetStatus("Clipboard channel uses letters, numbers, dots, dashes, and underscores only");
+            return;
+        }
+
+        if (clipboardChannel == _clipboardChannel) return;
+
+        _clipboardChannel = clipboardChannel;
+        _clipboardSyncService.UpdateChannel(clipboardChannel);
+        SaveSettings();
+        SetStatus($"Clipboard sync channel: {clipboardChannel}");
+    }
 }

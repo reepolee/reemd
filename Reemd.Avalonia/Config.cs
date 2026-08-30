@@ -14,6 +14,9 @@ internal static class Config
     /// <summary>GitHub sync debounce interval in milliseconds.</summary>
     internal const int GitHubSyncDebounceMs = 15000;
 
+    /// <summary>Default LAN multicast group name used for clipboard synchronization.</summary>
+    internal static string ClipboardChannel = "ree-md";
+
     /// <summary>File filter for markdown files.</summary>
     internal const string MarkdownFilter = "*.md";
 }

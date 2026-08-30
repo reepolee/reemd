@@ -3,6 +3,7 @@ using System.IO;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -21,6 +22,7 @@ public partial class MainWindow : SukiWindow
 {
     private readonly MarkdownConverter _markdownConverter = new();
     private readonly GitHubService _gitHubService = new();
+    private readonly ClipboardSyncService _clipboardSyncService;
 
     private readonly HashSet<string> _pinnedFilenames = [];
     private readonly ObservableCollection<FileEntry> _fileList = [];
@@ -67,6 +69,7 @@ public partial class MainWindow : SukiWindow
     private bool _isDarkMode;
     private bool _wordWrapEnabled;
     private string _projectHotkeyToken = ProjectHotkey.DefaultToken;
+    private string _clipboardChannel = Config.ClipboardChannel;
     private string? _pendingPreviewHtml;
     private DateTime? _lastSyncTime;
     private string? _pendingLastFile;
@@ -117,6 +120,8 @@ public partial class MainWindow : SukiWindow
 
         // Load settings first — restores window position, column widths, saved font sizes, etc.
         LoadSettings();
+        ClipboardChannelBox.Text = _clipboardChannel;
+        _clipboardSyncService = new ClipboardSyncService(GetClipboardTextAsync, SetClipboardTextAsync, _clipboardChannel);
         _gitHubService.LoadUsedRepos();
 
         // Load project shortcut toolbar buttons
@@ -196,6 +201,28 @@ public partial class MainWindow : SukiWindow
     {
         Loaded -= OnWindowLoaded;
         ApplyPreviewFontSize();
+        _clipboardSyncService.Start();
+    }
+
+    private async Task<string?> GetClipboardTextAsync()
+    {
+        var clipboardOperation = Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+            return clipboard == null ? null : await clipboard.TryGetTextAsync();
+        });
+        return await clipboardOperation;
+    }
+
+    private async Task SetClipboardTextAsync(string text)
+    {
+        var clipboardOperation = Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+            if (clipboard != null)
+                await clipboard.SetTextAsync(text);
+        });
+        await clipboardOperation;
     }
 
     #region Cursor Position Memory
@@ -276,6 +303,7 @@ public partial class MainWindow : SukiWindow
         _autoSaveTimer.Stop();
         _previewTimer.Stop();
         _gitHubSyncTimer.Stop();
+        _clipboardSyncService.Stop();
 
         SaveWindowPosition();
 

@@ -40,6 +40,12 @@
                     <Border Width="1" Height="18" Background="#C0C0C0" Margin="6,0" />
                     <ToggleButton x:Name="BtnToggleTheme" Content="🌙" Height="38" Margin="0,0,6,0" ToolTip.Tip="Toggle dark/light theme" Click="BtnToggleTheme_Click" />
                     <Border Width="1" Height="18" Background="#C0C0C0" Margin="6,0" />
+                    <TextBlock Text="LAN clip:" VerticalAlignment="Center" Margin="0,0,4,0" />
+                    <TextBox x:Name="ClipboardChannelBox" Width="105" Height="38" Margin="0,0,6,0"
+                             ToolTip.Tip="Clipboard sync channel. Devices on the same channel share text clipboard changes."
+                             LostFocus="ClipboardChannelBox_LostFocus"
+                             KeyDown="ClipboardChannelBox_KeyDown" />
+                    <Border Width="1" Height="18" Background="#C0C0C0" Margin="6,0" />
                     <Button x:Name="BtnPull" Content="⬇️ Pull" Height="38" Margin="0,0,6,0" ToolTip.Tip="Pull latest changes from remote (Ctrl+Shift+P)" Click="BtnPull_Click" />
                     <Border Width="1" Height="18" Background="#C0C0C0" Margin="6,0" />
                     <Button x:Name="BtnUpdateApp" Content="⬆ Update" Height="38" Margin="0,0,6,0" ToolTip.Tip="Check for and install the latest ReeMD release" Click="BtnUpdateApp_Click" />
