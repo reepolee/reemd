@@ -139,6 +139,7 @@ public partial class MainWindow : SukiWindow
             GetClipboardImageAsync,
             SetClipboardImageAsync);
         _clipboardSyncService.StatusChanged += ClipboardSyncService_StatusChanged;
+        ClipboardImageService.LogMessage += msg => Dispatcher.UIThread.Post(() => ClipboardSyncStatusText.Text = msg);
         _gitHubService.LoadUsedRepos();
 
         // Load project shortcut toolbar buttons

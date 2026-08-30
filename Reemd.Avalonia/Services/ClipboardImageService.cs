@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -12,9 +13,15 @@ namespace Reemd.Services;
 /// </summary>
 public static class ClipboardImageService
 {
-    // Windows clipboard formats
+    // Windows clipboard format constants
+    private const uint CF_BITMAP = 2;
     private const uint CF_DIB = 8;
     private const uint GMEM_MOVEABLE = 0x0002;
+
+    /// <summary>Raised for diagnostic log messages. Subscribe from the UI layer.</summary>
+    public static event Action<string>? LogMessage;
+
+    private static void Log(string message) => LogMessage?.Invoke($"[ClipboardImage] {message}");
 
     /// <summary>
     /// Reads the current clipboard image as PNG bytes, or returns null if no image is present.
@@ -23,6 +30,7 @@ public static class ClipboardImageService
     {
         if (OperatingSystem.IsMacOS()) return await ReadMacImageAsync();
         if (OperatingSystem.IsWindows()) return ReadWindowsImageAsync();
+        Log("Unsupported platform for image read");
         return null;
     }
 
@@ -31,8 +39,10 @@ public static class ClipboardImageService
     /// </summary>
     public static async Task WriteImageAsync(byte[] pngData)
     {
+        Log($"Writing {pngData.Length} bytes to clipboard");
         if (OperatingSystem.IsMacOS()) await WriteMacImageAsync(pngData);
         else if (OperatingSystem.IsWindows()) WriteWindowsImageAsync(pngData);
+        else Log("Unsupported platform for image write");
     }
 
     /// <summary>
@@ -57,18 +67,34 @@ public static class ClipboardImageService
                 // Try PNG first
                 var pngType = CreateNSString("public.png");
                 var pngData = ReadPasteboardData(generalPb, pngType);
-                if (pngData != null && pngData.Length > 0) return pngData;
+                if (pngData != null && pngData.Length > 0)
+                {
+                    Log($"Read PNG from pasteboard: {pngData.Length} bytes");
+                    return pngData;
+                }
 
+                Log("No PNG on pasteboard, trying TIFF...");
                 // Fall back to TIFF (macOS screenshots are TIFF)
                 var tiffType = CreateNSString("public.tiff");
                 var tiffData = ReadPasteboardData(generalPb, tiffType);
-                if (tiffData == null || tiffData.Length == 0) return null;
+                if (tiffData == null || tiffData.Length == 0)
+                {
+                    Log("No image data on pasteboard (neither PNG nor TIFF)");
+                    return null;
+                }
 
+                Log($"Read TIFF from pasteboard: {tiffData.Length} bytes, converting to PNG...");
                 // Convert TIFF → PNG using CoreGraphics ImageIO
-                return ConvertTiffToPng(tiffData);
+                var pngResult = ConvertTiffToPng(tiffData);
+                if (pngResult != null)
+                    Log($"TIFF→PNG conversion succeeded: {pngResult.Length} bytes");
+                else
+                    Log("TIFF→PNG conversion returned null");
+                return pngResult;
             }
-            catch
+            catch (Exception ex)
             {
+                Log($"macOS read error: {ex.GetType().Name}: {ex.Message}");
                 return null;
             }
         }).ConfigureAwait(false);
@@ -94,10 +120,11 @@ public static class ClipboardImageService
                 // setData:forType:
                 var setDataSel = sel_registerName("setData:forType:");
                 objc_msgSend_nint_nint_nint(generalPb, setDataSel, nsData, pngType);
+                Log($"macOS: wrote {pngData.Length} bytes as public.png");
             }
-            catch
+            catch (Exception ex)
             {
-                // Best-effort — swallow errors
+                Log($"macOS write error: {ex.GetType().Name}: {ex.Message}");
             }
         }).ConfigureAwait(false);
     }
@@ -110,12 +137,10 @@ public static class ClipboardImageService
 
     private static byte[]? ReadPasteboardData(nint pasteboard, nint typeString)
     {
-        // dataForType:
         var dataSel = sel_registerName("dataForType:");
         var nsData = objc_msgSend_nint_nint(pasteboard, dataSel, typeString);
         if (nsData == 0) return null;
 
-        // NSData → byte[]
         return NsDataToBytes(nsData);
     }
 
@@ -154,7 +179,6 @@ public static class ClipboardImageService
     {
         var nsStringClass = objc_getClass("NSString");
         var stringWithUtf8Sel = sel_registerName("stringWithUTF8String:");
-        // objc_msgSend passes the char* as a pointer (nint)
         var ptr = Marshal.StringToHGlobalAnsi(str);
         try
         {
@@ -168,46 +192,37 @@ public static class ClipboardImageService
 
     private static byte[]? ConvertTiffToPng(byte[] tiffData)
     {
-        // Use CoreGraphics ImageIO to convert TIFF → PNG natively
         var tiffNsData = CreateNSData(tiffData);
         if (tiffNsData == 0) return null;
 
-        // CGImageSourceCreateWithData(tiffData, NULL)
         var source = CGImageSourceCreateWithData(tiffNsData, 0);
         if (source == 0) return null;
 
         try
         {
-            // CGImageSourceCreateImageAtIndex(source, 0, NULL)
             var image = CGImageSourceCreateImageAtIndex(source, 0, 0);
             if (image == 0) return null;
 
             try
             {
-                // Create mutable NSData for PNG output
                 var pngOutputNsData = objc_msgSend_intptr(
                     objc_getClass("NSMutableData"),
                     sel_registerName("data"));
                 if (pngOutputNsData == 0) return null;
 
-                // kUTTypePNG = "public.png" as CFString
                 var kUTTypePng = CFStringCreateWithCString(0, "public.png", 0x08000100);
 
                 try
                 {
-                    // CGImageDestinationCreateWithData(output, kUTTypePNG, 1, NULL)
                     var dest = CGImageDestinationCreateWithData(pngOutputNsData, kUTTypePng, 1, 0);
                     if (dest == 0) return null;
 
                     try
                     {
-                        // CGImageDestinationAddImage(dest, image, NULL)
                         CGImageDestinationAddImage(dest, image, 0);
 
-                        // CGImageDestinationFinalize(dest)
                         if (!CGImageDestinationFinalize(dest)) return null;
 
-                        // Read PNG bytes from the output NSMutableData
                         return NsDataToBytes(pngOutputNsData);
                     }
                     finally
@@ -253,7 +268,7 @@ public static class ClipboardImageService
     [DllImport("/System/Library/Frameworks/ImageIO.framework/ImageIO")]
     private static extern bool CGImageDestinationFinalize(IntPtr destination);
 
-    // Objective-C runtime P/Invoke (shared with MacClipboardChangeMonitor)
+    // Objective-C runtime P/Invoke
     [DllImport("/usr/lib/libobjc.A.dylib")]
     private static extern IntPtr objc_getClass(string name);
 
@@ -271,35 +286,107 @@ public static class ClipboardImageService
 
     #endregion
 
-    #region Windows — Win32 clipboard API
+    #region Windows — Win32 clipboard + GDI+ interop
+
+    // GDI+ state — initialized lazily, shut down on process exit
+    private static uint _gdiplusToken;
+    private static bool _gdiplusInitialized;
+
+    private static void EnsureGdiplusInitialized()
+    {
+        if (_gdiplusInitialized) return;
+        try
+        {
+            var input = new GdiplusStartupInput { GdiplusVersion = 1 };
+            var status = GdiplusStartup(out _gdiplusToken, ref input, out _);
+            _gdiplusInitialized = status == 0; // Ok
+            if (!_gdiplusInitialized)
+                Log($"GdiplusStartup failed with status {status}");
+            else
+                Log("GDI+ initialized successfully");
+        }
+        catch (Exception ex)
+        {
+            Log($"GDI+ init error: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
 
     private static byte[]? ReadWindowsImageAsync()
     {
         try
         {
-            // Try CF_PNG first — most modern Windows screenshot tools provide this
+            // Enumerate available clipboard formats for diagnostics
+            Log("Checking clipboard formats...");
+            uint fmtIdx = 0;
+            var availableFormats = new List<string>();
+            while (true)
+            {
+                fmtIdx = EnumClipboardFormats(fmtIdx);
+                if (fmtIdx == 0) break;
+                var nameBuf = new char[256];
+                var nameLen = GetClipboardFormatNameW(fmtIdx, nameBuf, 256);
+                if (nameLen > 0)
+                    availableFormats.Add($"{fmtIdx}:{new string(nameBuf, 0, nameLen)}");
+                else
+                    availableFormats.Add($"{fmtIdx}:standard");
+            }
+            Log($"Available formats: {string.Join(", ", availableFormats)}");
+
+            // Try CF_PNG first — some screenshot tools provide this
             var cfPng = RegisterClipboardFormatW("PNG");
+            Log($"CF_PNG format ID: {cfPng}");
             if (cfPng != 0)
             {
                 var hMemPng = GetClipboardData(cfPng);
+                Log($"GetClipboardData(CF_PNG) = {(hMemPng == IntPtr.Zero ? "null" : "valid")}");
                 if (hMemPng != IntPtr.Zero)
                 {
                     var result = CopyGlobalMem(hMemPng);
-                    if (result != null) return result;
+                    if (result != null)
+                    {
+                        Log($"Read CF_PNG: {result.Length} bytes");
+                        return result;
+                    }
                 }
             }
 
             // Fall back to CF_DIB and convert to PNG
+            Log("Trying CF_DIB...");
             var hMemDib = GetClipboardData(CF_DIB);
+            Log($"GetClipboardData(CF_DIB) = {(hMemDib == IntPtr.Zero ? "null" : "valid")}");
             if (hMemDib == IntPtr.Zero) return null;
 
             var dib = CopyGlobalMem(hMemDib);
-            if (dib == null || dib.Length < 40) return null; // minimum BITMAPINFOHEADER size
+            if (dib == null)
+            {
+                Log("CF_DIB: failed to read global memory");
+                return null;
+            }
 
-            return ConvertDibToPng(dib);
+            Log($"CF_DIB: read {dib.Length} bytes");
+            if (dib.Length < 40)
+            {
+                Log("CF_DIB: data too small for BITMAPINFOHEADER");
+                return null;
+            }
+
+            // Log DIB header details
+            var biSize = BinaryPrimitives.ReadInt32LittleEndian(dib.AsSpan(0));
+            var biWidth = BinaryPrimitives.ReadInt32LittleEndian(dib.AsSpan(4));
+            var biHeight = BinaryPrimitives.ReadInt32LittleEndian(dib.AsSpan(8));
+            var biBitCount = BinaryPrimitives.ReadUInt16LittleEndian(dib.AsSpan(14));
+            Log($"DIB header: size={biSize}, width={biWidth}, height={biHeight}, bpp={biBitCount}");
+
+            var pngResult = ConvertDibToPng(dib);
+            if (pngResult != null)
+                Log($"DIB→PNG conversion succeeded: {pngResult.Length} bytes");
+            else
+                Log("DIB→PNG conversion returned null");
+            return pngResult;
         }
-        catch
+        catch (Exception ex)
         {
+            Log($"Windows read error: {ex.GetType().Name}: {ex.Message}");
             return null;
         }
     }
@@ -308,48 +395,132 @@ public static class ClipboardImageService
     {
         try
         {
-            var cfPng = RegisterClipboardFormatW("PNG");
-            if (cfPng == 0) return;
-
-            var hMem = GlobalAlloc(GMEM_MOVEABLE, (UIntPtr)pngData.Length);
-            if (hMem == IntPtr.Zero) return;
-
-            var ptr = GlobalLock(hMem);
-            if (ptr == IntPtr.Zero)
-            {
-                GlobalFree(hMem);
-                return;
-            }
-
-            try
-            {
-                Marshal.Copy(pngData, 0, ptr, pngData.Length);
-            }
-            finally
-            {
-                GlobalUnlock(hMem);
-            }
+            Log($"Writing {pngData.Length} bytes to Windows clipboard");
 
             if (!OpenClipboard(IntPtr.Zero))
             {
-                GlobalFree(hMem);
+                Log("OpenClipboard failed");
                 return;
             }
 
             try
             {
                 EmptyClipboard();
-                SetClipboardData(cfPng, hMem);
-                // hMem is now owned by the clipboard — do NOT free it
+                int formatsSet = 0;
+
+                // 1. Write CF_PNG — supported by modern apps (Chrome, Edge, etc.)
+                var cfPng = RegisterClipboardFormatW("PNG");
+                if (cfPng != 0)
+                {
+                    var hMemPng = GlobalAlloc(GMEM_MOVEABLE, (UIntPtr)pngData.Length);
+                    if (hMemPng != IntPtr.Zero)
+                    {
+                        var ptr = GlobalLock(hMemPng);
+                        if (ptr != IntPtr.Zero)
+                        {
+                            try { Marshal.Copy(pngData, 0, ptr, pngData.Length); }
+                            finally { GlobalUnlock(hMemPng); }
+
+                            SetClipboardData(cfPng, hMemPng);
+                            formatsSet++;
+                            Log($"Set CF_PNG ({pngData.Length} bytes)");
+                        }
+                        else
+                            GlobalFree(hMemPng);
+                    }
+                }
+
+                // 2. Write CF_BITMAP via GDI+ — supported by all Windows apps (Word, Paint, etc.)
+                EnsureGdiplusInitialized();
+                if (_gdiplusInitialized)
+                {
+                    var hBitmap = LoadPngAsHBitmap(pngData);
+                    if (hBitmap != IntPtr.Zero)
+                    {
+                        SetClipboardData(CF_BITMAP, hBitmap);
+                        formatsSet++;
+                        Log("Set CF_BITMAP via GDI+");
+                    }
+                    else
+                        Log("Failed to create HBITMAP from PNG");
+                }
+
+                Log($"Clipboard write complete: {formatsSet} format(s) set");
             }
             finally
             {
                 CloseClipboard();
             }
         }
+        catch (Exception ex)
+        {
+            Log($"Windows write error: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Uses GDI+ to decode PNG bytes into a GDI HBITMAP.
+    /// The caller must NOT free the returned handle — the clipboard takes ownership.
+    /// </summary>
+    private static IntPtr LoadPngAsHBitmap(byte[] pngData)
+    {
+        // Create an IStream over the PNG bytes
+        var hGlobal = Marshal.AllocHGlobal(pngData.Length);
+        try
+        {
+            Marshal.Copy(pngData, 0, hGlobal, pngData.Length);
+        }
         catch
         {
-            // Best-effort — swallow errors
+            Marshal.FreeHGlobal(hGlobal);
+            return IntPtr.Zero;
+        }
+
+        var hr = CreateStreamOnHGlobal(hGlobal, false, out var stream);
+        if (hr != 0 || stream == null)
+        {
+            Marshal.FreeHGlobal(hGlobal);
+            Log($"CreateStreamOnHGlobal failed: 0x{hr:X8}");
+            return IntPtr.Zero;
+        }
+
+        try
+        {
+            // Load PNG as GDI+ image
+            var status = GdipLoadImageFromStream(stream, out var image);
+            if (status != 0 || image == IntPtr.Zero)
+            {
+                Log($"GdipLoadImageFromStream failed: status={status}");
+                return IntPtr.Zero;
+            }
+
+            try
+            {
+                // Get image dimensions for diagnostics
+                GdipGetImageWidth(image, out var width);
+                GdipGetImageHeight(image, out var height);
+                Log($"GDI+ decoded PNG: {width}x{height}");
+
+                // Create HBITMAP (background = 0 = black for transparent pixels)
+                status = GdipCreateHBITMAPFromBitmap(image, out var hBitmap, 0);
+                if (status != 0 || hBitmap == IntPtr.Zero)
+                {
+                    Log($"GdipCreateHBITMAPFromBitmap failed: status={status}");
+                    return IntPtr.Zero;
+                }
+
+                Log($"Created HBITMAP: {hBitmap}");
+                return hBitmap;
+            }
+            finally
+            {
+                GdipDisposeImage(image);
+            }
+        }
+        finally
+        {
+            // Release the COM IStream — does NOT free hGlobal (we don't own it after this)
+            if (OperatingSystem.IsWindows()) Marshal.ReleaseComObject(stream);
         }
     }
 
@@ -359,10 +530,7 @@ public static class ClipboardImageService
     /// </summary>
     private static byte[]? ConvertDibToPng(byte[] dib)
     {
-        // DIB starts with BITMAPINFOHEADER. Prepend a 14-byte BITMAPFILEHEADER
-        // to create a valid BMP that Avalonia's Bitmap can decode.
         var bfOffBits = 14 + Marshal.SizeOf<BITMAPINFOHEADER>();
-        // biSize is at offset 0 of the DIB header (4 bytes LE)
         var biSize = BinaryPrimitives.ReadInt32LittleEndian(dib.AsSpan(0));
         if (biSize > 0 && biSize < dib.Length)
             bfOffBits = 14 + biSize;
@@ -408,6 +576,18 @@ public static class ClipboardImageService
         }
     }
 
+    // GDI+ types
+    [StructLayout(LayoutKind.Sequential)]
+    private struct GdiplusStartupInput
+    {
+        public uint GdiplusVersion;
+        public IntPtr DebugEventCallback;
+        [MarshalAs(UnmanagedType.Bool)]
+        public bool SuppressBackgroundThread;
+        [MarshalAs(UnmanagedType.Bool)]
+        public bool SuppressExternalCodecs;
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     private struct BITMAPINFOHEADER
     {
@@ -424,6 +604,7 @@ public static class ClipboardImageService
         public uint biClrImportant;
     }
 
+    // Win32 P/Invoke
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint RegisterClipboardFormatW(string format);
 
@@ -442,6 +623,12 @@ public static class ClipboardImageService
     [DllImport("user32.dll")]
     private static extern IntPtr SetClipboardData(uint uFormat, IntPtr hMem);
 
+    [DllImport("user32.dll")]
+    private static extern uint EnumClipboardFormats(uint format);
+
+    [DllImport("user32.dll")]
+    private static extern int GetClipboardFormatNameW(uint format, [Out] char[] lpszFormatName, int nMaxCount);
+
     [DllImport("kernel32.dll")]
     private static extern IntPtr GlobalAlloc(uint uFlags, UIntPtr dwBytes);
 
@@ -456,6 +643,32 @@ public static class ClipboardImageService
 
     [DllImport("kernel32.dll")]
     private static extern IntPtr GlobalFree(IntPtr hMem);
+
+    // COM IStream
+    [DllImport("ole32.dll")]
+    private static extern int CreateStreamOnHGlobal(IntPtr hGlobal, [MarshalAs(UnmanagedType.Bool)] bool fDeleteOnRelease, [MarshalAs(UnmanagedType.Interface)] out IStream ppstm);
+
+    // GDI+ P/Invoke
+    [DllImport("gdiplus.dll")]
+    private static extern int GdiplusStartup(out uint token, ref GdiplusStartupInput input, out IntPtr output);
+
+    [DllImport("gdiplus.dll")]
+    private static extern void GdiplusShutdown(uint token);
+
+    [DllImport("gdiplus.dll")]
+    private static extern int GdipLoadImageFromStream([MarshalAs(UnmanagedType.Interface)] IStream stream, out IntPtr image);
+
+    [DllImport("gdiplus.dll")]
+    private static extern int GdipCreateHBITMAPFromBitmap(IntPtr image, out IntPtr hBitmap, uint background);
+
+    [DllImport("gdiplus.dll")]
+    private static extern int GdipDisposeImage(IntPtr image);
+
+    [DllImport("gdiplus.dll")]
+    private static extern int GdipGetImageWidth(IntPtr image, out uint width);
+
+    [DllImport("gdiplus.dll")]
+    private static extern int GdipGetImageHeight(IntPtr image, out uint height);
 
     #endregion
 }
