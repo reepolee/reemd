@@ -27,6 +27,7 @@ public sealed class ClipboardSyncService : IDisposable
     private string _channel;
     private string[] _peer_addresses;
     private readonly ConcurrentDictionary<string, string> _sent_clipboard_text_by_peer = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, byte> _discovered_peer_addresses = new(StringComparer.Ordinal);
     private string? _last_clipboard_text;
     private TcpListener? _listener;
     private CancellationTokenSource? _cancellation_token_source;
@@ -98,6 +99,7 @@ public sealed class ClipboardSyncService : IDisposable
         _channel = channel;
         _last_clipboard_text = null;
         _sent_clipboard_text_by_peer.Clear();
+        _discovered_peer_addresses.Clear();
         _logger.Log($"Clipboard channel changed: {channel}");
         Start();
     }
@@ -239,6 +241,7 @@ public sealed class ClipboardSyncService : IDisposable
     private async Task<bool> SendEnvelopeAsync(string peer_address, int port, byte[] payload, CancellationToken cancellation_token)
     {
         var connectionEstablished = false;
+        var peer_ip_address = IPAddress.Parse(peer_address);
         try
         {
             using var tcp_client = new TcpClient(AddressFamily.InterNetwork)
@@ -247,7 +250,7 @@ public sealed class ClipboardSyncService : IDisposable
             };
             using var connect_cancellation_token_source = CancellationTokenSource.CreateLinkedTokenSource(cancellation_token);
             connect_cancellation_token_source.CancelAfter(ConnectTimeoutMs);
-            await tcp_client.ConnectAsync(peer_address, port, connect_cancellation_token_source.Token).ConfigureAwait(false);
+            await tcp_client.ConnectAsync(peer_ip_address, port, connect_cancellation_token_source.Token).ConfigureAwait(false);
             connectionEstablished = true;
 
             await using var stream = tcp_client.GetStream();
@@ -281,6 +284,7 @@ public sealed class ClipboardSyncService : IDisposable
             while (!cancellation_token.IsCancellationRequested)
             {
                 var tcp_client = await listener.AcceptTcpClientAsync(cancellation_token).ConfigureAwait(false);
+                LogDiscoveredPeer(tcp_client);
                 _ = ReceiveEnvelopeAsync(tcp_client, cancellation_token);
             }
         }
@@ -294,6 +298,18 @@ public sealed class ClipboardSyncService : IDisposable
         {
             Report($"Clipboard TCP listener error: {exception.SocketErrorCode}");
         }
+    }
+
+    private void LogDiscoveredPeer(TcpClient tcp_client)
+    {
+        var remote_endpoint = tcp_client.Client.RemoteEndPoint as IPEndPoint;
+        var peer_address = remote_endpoint?.Address.ToString();
+        if (string.IsNullOrWhiteSpace(peer_address)) return;
+        if (!_discovered_peer_addresses.TryAdd(peer_address, 0)) return;
+
+        var configured_peer = _peer_addresses.Contains(peer_address, StringComparer.Ordinal);
+        var peer_type = configured_peer ? "configured" : "unconfigured";
+        Report($"Clipboard TCP peer discovered: {peer_address} ({peer_type})");
     }
 
     private async Task ReceiveEnvelopeAsync(TcpClient tcp_client, CancellationToken cancellation_token)
