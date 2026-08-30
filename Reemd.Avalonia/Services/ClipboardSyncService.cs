@@ -161,12 +161,22 @@ public sealed class ClipboardSyncService : IDisposable
             if (udpClients.Length == 0) return;
 
             var endpoint = GetChannelEndpoint(_channel);
-            var broadcastEndpoint = new IPEndPoint(IPAddress.Broadcast, endpoint.Port);
             var sentCount = 0;
             foreach (var udpClient in udpClients)
             {
                 try
                 {
+                    var localEndpoint = udpClient.Client.LocalEndPoint as IPEndPoint;
+                    if (localEndpoint == null) continue;
+
+                    var broadcastAddress = GetBroadcastAddress(localEndpoint.Address);
+                    if (broadcastAddress == null)
+                    {
+                        _logger.Log($"Clipboard broadcast address unavailable for {localEndpoint.Address}");
+                        continue;
+                    }
+
+                    var broadcastEndpoint = new IPEndPoint(broadcastAddress, endpoint.Port);
                     await udpClient.SendAsync(payload, broadcastEndpoint, cancellationToken).ConfigureAwait(false);
                     sentCount++;
                 }
@@ -179,7 +189,7 @@ public sealed class ClipboardSyncService : IDisposable
             if (sentCount > 0)
                 Report($"Clipboard sent: {payload.Length} bytes on {_channel} via {sentCount} interface(s)");
             else
-                Report("Clipboard send error: no active interface could reach the multicast group");
+                Report("Clipboard send error: no active interface could reach LAN broadcast");
         }
         catch (OperationCanceledException)
         {
@@ -322,6 +332,29 @@ public sealed class ClipboardSyncService : IDisposable
                 !address.ToString().StartsWith("169.254.", StringComparison.Ordinal));
         var localAddresses = ipv4Addresses.Distinct().ToArray();
         return localAddresses;
+    }
+
+    private static IPAddress? GetBroadcastAddress(IPAddress localAddress)
+    {
+        var networkInterfaces = NetworkInterface.GetAllNetworkInterfaces();
+        foreach (var networkInterface in networkInterfaces)
+        {
+            var unicastAddresses = networkInterface.GetIPProperties().UnicastAddresses;
+            var unicastAddress = unicastAddresses.FirstOrDefault(address => address.Address.Equals(localAddress));
+            if (unicastAddress?.IPv4Mask == null) continue;
+
+            var addressBytes = localAddress.GetAddressBytes();
+            var maskBytes = unicastAddress.IPv4Mask.GetAddressBytes();
+            var broadcastBytes = new byte[addressBytes.Length];
+            for (var index = 0; index < addressBytes.Length; index++)
+            {
+                broadcastBytes[index] = (byte)(addressBytes[index] | ~maskBytes[index]);
+            }
+
+            return new IPAddress(broadcastBytes);
+        }
+
+        return null;
     }
 
     public void Dispose()
