@@ -94,6 +94,11 @@ public partial class MainWindow
                         if (ClipboardSyncService.IsValidChannel(clipboardChannel))
                             _clipboardChannel = clipboardChannel;
                         break;
+                    case "ClipboardPeers":
+                        var clipboardPeers = parts[1].Trim();
+                        if (TryParseClipboardPeers(clipboardPeers, out _))
+                            _clipboardPeers = clipboardPeers;
+                        break;
                 }
             }
 
@@ -147,6 +152,7 @@ public partial class MainWindow
                 $"WordWrapEnabled={_wordWrapEnabled}",
                 $"ProjectHotkeyModifiers={_projectHotkeyToken}",
                 $"ClipboardChannel={_clipboardChannel}",
+                $"ClipboardPeers={_clipboardPeers}",
             };
 
             foreach (var kvp in _scrollRatios)
@@ -237,6 +243,19 @@ public partial class MainWindow
         Editor.Focus();
     }
 
+    private void ClipboardPeersBox_LostFocus(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        UpdateClipboardPeers();
+    }
+
+    private void ClipboardPeersBox_KeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
+    {
+        if (e.Key != Avalonia.Input.Key.Enter) return;
+
+        UpdateClipboardPeers();
+        Editor.Focus();
+    }
+
     private void UpdateClipboardChannel()
     {
         var clipboardChannel = ClipboardChannelBox.Text?.Trim() ?? string.Empty;
@@ -253,6 +272,39 @@ public partial class MainWindow
         _clipboardSyncService.UpdateChannel(clipboardChannel);
         SaveSettings();
         SetStatus($"Clipboard sync channel: {clipboardChannel}");
+    }
+
+    private void UpdateClipboardPeers()
+    {
+        var clipboardPeers = ClipboardPeersBox.Text?.Trim() ?? string.Empty;
+        if (!TryParseClipboardPeers(clipboardPeers, out var peerAddresses))
+        {
+            ClipboardPeersBox.Text = _clipboardPeers;
+            SetStatus("LAN peers must be comma-separated IPv4 addresses");
+            return;
+        }
+
+        var normalizedPeers = string.Join(", ", peerAddresses);
+        if (normalizedPeers == _clipboardPeers) return;
+
+        _clipboardPeers = normalizedPeers;
+        ClipboardPeersBox.Text = normalizedPeers;
+        _clipboardSyncService.UpdatePeers(peerAddresses);
+        SaveSettings();
+        SetStatus($"Clipboard TCP peers: {peerAddresses.Length}");
+    }
+
+    private static bool TryParseClipboardPeers(string peers, out string[] peerAddresses)
+    {
+        var peerTokens = peers.Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (peerTokens.Any(peer => !ClipboardSyncService.IsValidPeerAddress(peer)))
+        {
+            peerAddresses = [];
+            return false;
+        }
+
+        peerAddresses = peerTokens.Distinct(StringComparer.Ordinal).ToArray();
+        return true;
     }
 
     private void BtnOpenClipboardLog_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

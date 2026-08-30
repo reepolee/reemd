@@ -185,15 +185,15 @@ folder).
 
 ## LAN clipboard sync
 
-ReeMD checks the operating system text clipboard and shares changes by UDP broadcast with
-other ReeMD instances on the same LAN clipboard channel. The channel is shown as `LAN clip:`
-in the toolbar and defaults to `ree-md`.
+ReeMD checks the operating system text clipboard and shares changes over TCP with configured
+LAN peers. The channel is shown as `LAN clip:` in the toolbar and defaults to `ree-md`; it
+selects the TCP port shared by all devices on that channel.
 
-To temporarily share with another group, enter the same channel name on each participating
-device and press Enter. Change the value back to your usual device channel to leave that
-group. Channel names can contain letters, numbers, dots, dashes, and underscores. Clipboard
-sync is text-only, is limited to 48 KB per update, and is not encrypted, so use it only on a
-trusted local network.
+Enter the other devices' IPv4 addresses in `Peers` on each participating device, then press
+Enter. To temporarily share with another group, use the same channel name on each device;
+change it back to leave that group. Channel names can contain letters, numbers, dots, dashes,
+and underscores. Clipboard sync is text-only, is limited to 48 KB per update, and is not
+encrypted, so use it only on a trusted local network.
 
 The status bar shows listener, send, receive, and error events. Select `Log` beside the channel
 to open the payload-free `clipboard-sync.log` file when diagnosing a network or firewall issue.

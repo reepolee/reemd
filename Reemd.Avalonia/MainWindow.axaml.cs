@@ -74,6 +74,7 @@ public partial class MainWindow : SukiWindow
     private bool _wordWrapEnabled;
     private string _projectHotkeyToken = ProjectHotkey.DefaultToken;
     private string _clipboardChannel = Config.ClipboardChannel;
+    private string _clipboardPeers = string.Empty;
     private string? _pendingPreviewHtml;
     private DateTime? _lastSyncTime;
     private string? _pendingLastFile;
@@ -125,11 +126,14 @@ public partial class MainWindow : SukiWindow
         // Load settings first — restores window position, column widths, saved font sizes, etc.
         LoadSettings();
         ClipboardChannelBox.Text = _clipboardChannel;
+        ClipboardPeersBox.Text = _clipboardPeers;
+        TryParseClipboardPeers(_clipboardPeers, out var clipboardPeers);
         _clipboardSyncService = new ClipboardSyncService(
             GetClipboardTextAsync,
             SetClipboardTextAsync,
             HasClipboardChangedAsync,
-            _clipboardChannel);
+            _clipboardChannel,
+            clipboardPeers);
         _clipboardSyncService.StatusChanged += ClipboardSyncService_StatusChanged;
         _gitHubService.LoadUsedRepos();
 
