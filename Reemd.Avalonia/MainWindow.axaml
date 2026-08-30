@@ -47,7 +47,7 @@
                              KeyDown="ClipboardChannelBox_KeyDown" />
                     <TextBlock Text="Peers:" VerticalAlignment="Center" Margin="0,0,4,0" />
                     <TextBox x:Name="ClipboardPeersBox" Width="190" Height="38" Margin="0,0,6,0"
-                             ToolTip.Tip="Comma-separated LAN IPv4 addresses of devices that should receive clipboard updates."
+                             ToolTip.Tip="Optional comma-separated LAN IPv4 addresses. Matching channels discover peers automatically."
                              LostFocus="ClipboardPeersBox_LostFocus"
                              KeyDown="ClipboardPeersBox_KeyDown" />
                     <Button Content="Log" Height="38" Margin="0,0,6,0" ToolTip.Tip="Open LAN clipboard sync diagnostics" Click="BtnOpenClipboardLog_Click" />
