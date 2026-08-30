@@ -1,4 +1,5 @@
 using System.Text;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media.Imaging;
@@ -333,12 +334,20 @@ public partial class MainWindow
             if (representation.FormatKind == "universal" && representation.ValueType == "bitmap")
             {
                 var bitmap_stream = new MemoryStream(representation.Data, writable: false);
-                var bitmap = new Bitmap(bitmap_stream);
+                var source_bitmap = new Bitmap(bitmap_stream);
                 bitmap_stream.Dispose();
-                data_transfer_item.SetBitmap(bitmap);
+                var clipboard_bitmap = PrepareClipboardBitmap(source_bitmap);
+                if (!ReferenceEquals(source_bitmap, clipboard_bitmap))
+                    source_bitmap.Dispose();
+
+                data_transfer_item.SetBitmap(clipboard_bitmap);
+                var pixel_size = clipboard_bitmap.PixelSize;
+                var pixel_format = clipboard_bitmap.Format?.ToString() ?? "unknown";
+                var alpha_format = clipboard_bitmap.AlphaFormat?.ToString() ?? "unknown";
                 _clipboard_sync_logger.Log(
                     $"Clipboard image applied: identifier={representation.Identifier}, target=bitmap, " +
-                    $"bytes={representation.Data.Length}");
+                    $"bytes={representation.Data.Length}, pixels={pixel_size.Width}x{pixel_size.Height}, " +
+                    $"pixel_format={pixel_format}, alpha_format={alpha_format}");
                 return true;
             }
 
@@ -398,6 +407,34 @@ public partial class MainWindow
         }
 
         return false;
+    }
+
+    private Bitmap PrepareClipboardBitmap(Bitmap source_bitmap)
+    {
+        var source_pixel_size = source_bitmap.PixelSize;
+        var source_pixel_format = source_bitmap.Format?.ToString() ?? "unknown";
+        var source_alpha_format = source_bitmap.AlphaFormat?.ToString() ?? "unknown";
+        _clipboard_sync_logger.Log(
+            $"Clipboard image decoded: pixels={source_pixel_size.Width}x{source_pixel_size.Height}, " +
+            $"pixel_format={source_pixel_format}, alpha_format={source_alpha_format}, " +
+            $"dpi={source_bitmap.Dpi.X}x{source_bitmap.Dpi.Y}");
+
+        if (!OperatingSystem.IsWindows()) return source_bitmap;
+
+        var clipboard_dpi = new Vector(96, 96);
+        var normalized_bitmap = new RenderTargetBitmap(source_pixel_size, clipboard_dpi);
+        using var drawing_context = normalized_bitmap.CreateDrawingContext();
+        var source_size = source_bitmap.Size;
+        var source_rect = new Rect(0, 0, source_size.Width, source_size.Height);
+        var target_rect = new Rect(0, 0, source_pixel_size.Width, source_pixel_size.Height);
+        drawing_context.DrawImage(source_bitmap, source_rect, target_rect);
+
+        var normalized_pixel_format = normalized_bitmap.Format?.ToString() ?? "unknown";
+        var normalized_alpha_format = normalized_bitmap.AlphaFormat?.ToString() ?? "unknown";
+        _clipboard_sync_logger.Log(
+            $"Clipboard image normalized for Windows DIB: pixels={source_pixel_size.Width}x{source_pixel_size.Height}, " +
+            $"pixel_format={normalized_pixel_format}, alpha_format={normalized_alpha_format}, dpi=96x96");
+        return normalized_bitmap;
     }
 
     private static string? GetTargetFormatIdentifier(
