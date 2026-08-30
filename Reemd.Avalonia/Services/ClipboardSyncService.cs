@@ -135,6 +135,21 @@ public sealed class ClipboardSyncService : IDisposable
         return SendChangedClipboardAsync(CancellationToken.None, true);
     }
 
+    public async Task PublishClipboardTextAsync(string clipboard_text)
+    {
+        _logger.Log($"Clipboard publish requested: {Encoding.UTF8.GetByteCount(clipboard_text)} bytes");
+        if (!await _poll_lock.WaitAsync(0).ConfigureAwait(false)) return;
+
+        try
+        {
+            await SendClipboardTextAsync(clipboard_text, CancellationToken.None).ConfigureAwait(false);
+        }
+        finally
+        {
+            _poll_lock.Release();
+        }
+    }
+
     public void Stop()
     {
         lock (_lifecycle_lock)
@@ -181,49 +196,10 @@ public sealed class ClipboardSyncService : IDisposable
                 if (!clipboard_changed) return;
             }
 
-            var peer_addresses = _peer_addresses;
             var clipboard_text = await _clipboard_text_reader().ConfigureAwait(false);
             if (clipboard_text == null) return;
 
-            if (peer_addresses.Length == 0)
-            {
-                Report("Clipboard change detected, but no TCP peers are configured");
-                return;
-            }
-
-            if (clipboard_text != _last_clipboard_text)
-                _sent_clipboard_text_by_peer.Clear();
-
-            var has_pending_peer = peer_addresses.Any(peer_address =>
-                !_sent_clipboard_text_by_peer.TryGetValue(peer_address, out var sent_clipboard_text) ||
-                sent_clipboard_text != clipboard_text);
-            if (clipboard_text == _last_clipboard_text && !has_pending_peer) return;
-
-            _last_clipboard_text = clipboard_text;
-            var envelope = new ClipboardEnvelope(1, _channel, _sender_id, clipboard_text);
-            var payload = JsonSerializer.SerializeToUtf8Bytes(envelope);
-            if (payload.Length > MaxPayloadBytes)
-            {
-                Report($"Clipboard update skipped: {payload.Length} bytes exceeds {MaxPayloadBytes} byte limit");
-                return;
-            }
-
-            var port = GetChannelPort(_channel);
-            var sent_count = 0;
-            foreach (var peer_address in peer_addresses)
-            {
-                if (_sent_clipboard_text_by_peer.TryGetValue(peer_address, out var sent_clipboard_text) &&
-                    sent_clipboard_text == clipboard_text)
-                    continue;
-
-                var was_sent = await SendEnvelopeAsync(peer_address, port, payload, cancellation_token).ConfigureAwait(false);
-                if (!was_sent) continue;
-
-                _sent_clipboard_text_by_peer[peer_address] = clipboard_text;
-                sent_count++;
-            }
-
-            Report($"Clipboard sent: {payload.Length} bytes to {sent_count}/{peer_addresses.Length} TCP peer(s)");
+            await SendClipboardTextAsync(clipboard_text, cancellation_token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -236,6 +212,50 @@ public sealed class ClipboardSyncService : IDisposable
         {
             _poll_lock.Release();
         }
+    }
+
+    private async Task SendClipboardTextAsync(string clipboard_text, CancellationToken cancellation_token)
+    {
+        var peer_addresses = _peer_addresses;
+        if (peer_addresses.Length == 0)
+        {
+            Report("Clipboard change detected, but no TCP peers are configured");
+            return;
+        }
+
+        if (clipboard_text != _last_clipboard_text)
+            _sent_clipboard_text_by_peer.Clear();
+
+        var has_pending_peer = peer_addresses.Any(peer_address =>
+            !_sent_clipboard_text_by_peer.TryGetValue(peer_address, out var sent_clipboard_text) ||
+            sent_clipboard_text != clipboard_text);
+        if (clipboard_text == _last_clipboard_text && !has_pending_peer) return;
+
+        _last_clipboard_text = clipboard_text;
+        var envelope = new ClipboardEnvelope(1, _channel, _sender_id, clipboard_text);
+        var payload = JsonSerializer.SerializeToUtf8Bytes(envelope);
+        if (payload.Length > MaxPayloadBytes)
+        {
+            Report($"Clipboard update skipped: {payload.Length} bytes exceeds {MaxPayloadBytes} byte limit");
+            return;
+        }
+
+        var port = GetChannelPort(_channel);
+        var sent_count = 0;
+        foreach (var peer_address in peer_addresses)
+        {
+            if (_sent_clipboard_text_by_peer.TryGetValue(peer_address, out var sent_clipboard_text) &&
+                sent_clipboard_text == clipboard_text)
+                continue;
+
+            var was_sent = await SendEnvelopeAsync(peer_address, port, payload, cancellation_token).ConfigureAwait(false);
+            if (!was_sent) continue;
+
+            _sent_clipboard_text_by_peer[peer_address] = clipboard_text;
+            sent_count++;
+        }
+
+        Report($"Clipboard sent: {payload.Length} bytes to {sent_count}/{peer_addresses.Length} TCP peer(s)");
     }
 
     private async Task<bool> SendEnvelopeAsync(string peer_address, int port, byte[] payload, CancellationToken cancellation_token)

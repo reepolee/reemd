@@ -36,8 +36,9 @@ public partial class MainWindow
     private void ContextMenu_Cut_Click(object? sender, RoutedEventArgs e) => Editor.Cut();
     private void ContextMenu_Copy_Click(object? sender, RoutedEventArgs e)
     {
+        var selected_text = Editor.SelectedText;
         Editor.Copy();
-        _ = PublishClipboardAsync();
+        _ = PublishClipboardAsync(selected_text);
     }
     private void ContextMenu_Paste_Click(object? sender, RoutedEventArgs e) => HandlePaste();
 

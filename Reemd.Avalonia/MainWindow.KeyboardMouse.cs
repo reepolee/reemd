@@ -307,8 +307,9 @@ public partial class MainWindow
         var copyModifiers = OperatingSystem.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control;
         if (e.Key == Key.C && e.KeyModifiers == copyModifiers)
         {
+            var selected_text = Editor.SelectedText;
             Editor.Copy();
-            _ = PublishClipboardAsync();
+            _ = PublishClipboardAsync(selected_text);
             e.Handled = true;
             return;
         }

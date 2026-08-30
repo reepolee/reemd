@@ -250,9 +250,9 @@ public partial class MainWindow : SukiWindow
         return Task.FromResult(!OperatingSystem.IsMacOS());
     }
 
-    private async Task PublishClipboardAsync()
+    private Task PublishClipboardAsync(string clipboard_text)
     {
-        await _clipboardSyncService.PublishCurrentClipboardAsync();
+        return Task.Run(() => _clipboardSyncService.PublishClipboardTextAsync(clipboard_text));
     }
 
     private async Task SetClipboardTextAsync(string text)
