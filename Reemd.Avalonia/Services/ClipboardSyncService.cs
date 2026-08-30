@@ -220,6 +220,7 @@ public sealed class ClipboardSyncService : IDisposable
 
     private async Task<bool> SendEnvelopeAsync(string peer_address, int port, byte[] payload, CancellationToken cancellation_token)
     {
+        var connectionEstablished = false;
         try
         {
             using var tcp_client = new TcpClient(AddressFamily.InterNetwork)
@@ -229,6 +230,7 @@ public sealed class ClipboardSyncService : IDisposable
             using var connect_cancellation_token_source = CancellationTokenSource.CreateLinkedTokenSource(cancellation_token);
             connect_cancellation_token_source.CancelAfter(ConnectTimeoutMs);
             await tcp_client.ConnectAsync(peer_address, port, connect_cancellation_token_source.Token).ConfigureAwait(false);
+            connectionEstablished = true;
 
             await using var stream = tcp_client.GetStream();
             await WriteEnvelopeAsync(stream, payload, cancellation_token).ConfigureAwait(false);
@@ -236,17 +238,20 @@ public sealed class ClipboardSyncService : IDisposable
         }
         catch (OperationCanceledException) when (!cancellation_token.IsCancellationRequested)
         {
-            _logger.Log($"Clipboard TCP connection timed out: {peer_address}:{port}");
+            var operation = connectionEstablished ? "write" : "connection";
+            _logger.Log($"Clipboard TCP {operation} timed out: {peer_address}:{port}");
             return false;
         }
         catch (SocketException exception)
         {
-            _logger.Log($"Clipboard TCP connection failed: {peer_address}:{port} ({exception.SocketErrorCode})");
+            var operation = connectionEstablished ? "write" : "connection";
+            _logger.Log($"Clipboard TCP {operation} failed: {peer_address}:{port} ({exception.SocketErrorCode})");
             return false;
         }
         catch (Exception exception)
         {
-            _logger.Log($"Clipboard TCP connection failed: {peer_address}:{port} ({exception.GetType().Name})");
+            var operation = connectionEstablished ? "write" : "connection";
+            _logger.Log($"Clipboard TCP {operation} failed: {peer_address}:{port} ({exception.GetType().Name})");
             return false;
         }
     }
