@@ -21,11 +21,13 @@ public sealed class ClipboardSyncService : IDisposable
     private const int ConnectTimeoutMs = 3000;
     private const int HandshakeTimeoutMs = 3000;
     private const int MaxTextBytes = 48 * 1024;
-    private const int MaxPayloadBytes = 64 * 1024;
+    private const int MaxPayloadBytes = 16 * 1024 * 1024;
 
     private readonly Func<Task<string?>> _clipboard_text_reader;
     private readonly Func<string, Task> _clipboard_text_writer;
     private readonly Func<Task<bool>> _clipboard_change_checker;
+    private readonly Func<Task<byte[]?>>? _clipboard_image_reader;
+    private readonly Func<byte[], Task>? _clipboard_image_writer;
     private readonly string _sender_id = Guid.NewGuid().ToString("N");
     private readonly SemaphoreSlim _poll_lock = new(1, 1);
     private readonly object _lifecycle_lock = new();
@@ -39,6 +41,7 @@ public sealed class ClipboardSyncService : IDisposable
     private string _channel;
     private string[] _peer_addresses;
     private string? _last_clipboard_text;
+    private string? _last_clipboard_image_hash;
     private ClipboardUpdate? _latest_local_update;
     private TcpListener? _listener;
     private MdnsClipboardDiscovery? _mdns_discovery;
@@ -54,11 +57,15 @@ public sealed class ClipboardSyncService : IDisposable
         Func<string, Task> clipboard_text_writer,
         Func<Task<bool>> clipboard_change_checker,
         string channel,
-        IEnumerable<string> peer_addresses)
+        IEnumerable<string> peer_addresses,
+        Func<Task<byte[]?>>? clipboard_image_reader = null,
+        Func<byte[], Task>? clipboard_image_writer = null)
     {
         _clipboard_text_reader = clipboard_text_reader;
         _clipboard_text_writer = clipboard_text_writer;
         _clipboard_change_checker = clipboard_change_checker;
+        _clipboard_image_reader = clipboard_image_reader;
+        _clipboard_image_writer = clipboard_image_writer;
         _channel = channel;
         _peer_addresses = peer_addresses.ToArray();
     }
@@ -239,9 +246,28 @@ public sealed class ClipboardSyncService : IDisposable
             }
 
             var clipboard_text = await _clipboard_text_reader().ConfigureAwait(false);
-            if (clipboard_text == null || clipboard_text == _last_clipboard_text) return;
 
-            await PublishLocalClipboardTextAsync(clipboard_text, cancellation_token).ConfigureAwait(false);
+            // Text takes priority — if there's text, sync it
+            if (clipboard_text != null && clipboard_text != _last_clipboard_text)
+            {
+                await PublishLocalClipboardTextAsync(clipboard_text, cancellation_token).ConfigureAwait(false);
+                return;
+            }
+
+            // No text (or same text) — try image sync
+            if (_clipboard_image_reader != null)
+            {
+                var image_data = await _clipboard_image_reader().ConfigureAwait(false);
+                if (image_data != null && image_data.Length > 0)
+                {
+                    var image_hash = ClipboardImageService.ComputeImageHash(image_data);
+                    if (image_hash != _last_clipboard_image_hash)
+                    {
+                        await PublishLocalClipboardImageAsync(image_data, image_hash, cancellation_token).ConfigureAwait(false);
+                        return;
+                    }
+                }
+            }
         }
         catch (OperationCanceledException)
         {
@@ -277,6 +303,7 @@ public sealed class ClipboardSyncService : IDisposable
         }
 
         _last_clipboard_text = clipboard_text;
+        _last_clipboard_image_hash = null;
         var connections = _connections_by_sender.Values.ToArray();
         if (connections.Length == 0)
         {
@@ -289,6 +316,74 @@ public sealed class ClipboardSyncService : IDisposable
         var send_results = await Task.WhenAll(send_tasks).ConfigureAwait(false);
         var sent_count = send_results.Count(was_sent => was_sent);
         Report($"Clipboard sent: {text_size} bytes to {sent_count}/{connections.Length} connected peer(s)");
+    }
+
+    private async Task PublishLocalClipboardImageAsync(byte[] image_data, string image_hash, CancellationToken cancellation_token)
+    {
+        var data_size = image_data.Length;
+        if (data_size > MaxPayloadBytes)
+        {
+            Report($"Clipboard image skipped: {data_size} bytes exceeds {MaxPayloadBytes} byte limit");
+            return;
+        }
+
+        var base64 = Convert.ToBase64String(image_data);
+        _last_clipboard_image_hash = image_hash;
+        _last_clipboard_text = null;
+        _latest_local_update = null;
+
+        var connections = _connections_by_sender.Values.ToArray();
+        if (connections.Length == 0)
+        {
+            Report($"Clipboard image queued: {data_size} bytes, no connected peers");
+            return;
+        }
+
+        var message_id = Guid.NewGuid().ToString("N");
+        var send_tasks = connections.Select(connection =>
+            SendClipboardImageAsync(connection, message_id, base64, cancellation_token));
+        var send_results = await Task.WhenAll(send_tasks).ConfigureAwait(false);
+        var sent_count = send_results.Count(was_sent => was_sent);
+        Report($"Clipboard image sent: {data_size} bytes to {sent_count}/{connections.Length} connected peer(s)");
+    }
+
+    private async Task<bool> SendClipboardImageAsync(
+        PeerConnection connection,
+        string message_id,
+        string base64_data,
+        CancellationToken cancellation_token)
+    {
+        var remote_sender_id = connection.RemoteSenderId;
+        if (remote_sender_id == null) return false;
+        if (_acked_message_by_sender.TryGetValue(remote_sender_id, out var acked_message_id) &&
+            acked_message_id == message_id)
+            return true;
+
+        var message = new ClipboardMessage(
+            ProtocolVersion,
+            "clipboard",
+            _channel,
+            _sender_id,
+            message_id,
+            null,
+            base64_data,
+            "image/png");
+
+        try
+        {
+            await connection.SendAsync(message, cancellation_token).ConfigureAwait(false);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _logger.Log($"Clipboard TCP write failed: {connection.RemoteAddress} ({exception.GetType().Name})");
+            connection.Close();
+            return false;
+        }
     }
 
     private async Task<bool> SendClipboardUpdateAsync(
@@ -308,7 +403,9 @@ public sealed class ClipboardSyncService : IDisposable
             _channel,
             _sender_id,
             clipboard_update.MessageId,
-            clipboard_update.Text);
+            clipboard_update.Text,
+            null,
+            null);
 
         try
         {
@@ -358,6 +455,8 @@ public sealed class ClipboardSyncService : IDisposable
                     "ping",
                     _channel,
                     _sender_id,
+                    null,
+                    null,
                     null,
                     null);
 
@@ -514,6 +613,8 @@ public sealed class ClipboardSyncService : IDisposable
                 _channel,
                 _sender_id,
                 null,
+                null,
+                null,
                 null);
             await connection.SendAsync(hello_message, cancellation_token).ConfigureAwait(false);
 
@@ -532,6 +633,23 @@ public sealed class ClipboardSyncService : IDisposable
             var latest_update = _latest_local_update;
             if (latest_update != null)
                 await SendClipboardUpdateAsync(connection, latest_update, cancellation_token).ConfigureAwait(false);
+
+            // Also send pending image if we have one
+            var pending_image_hash = _last_clipboard_image_hash;
+            if (pending_image_hash != null && _clipboard_image_reader != null)
+            {
+                var image_data = await _clipboard_image_reader().ConfigureAwait(false);
+                if (image_data != null && image_data.Length > 0)
+                {
+                    var current_hash = ClipboardImageService.ComputeImageHash(image_data);
+                    if (current_hash == pending_image_hash)
+                    {
+                        var base64 = Convert.ToBase64String(image_data);
+                        var msg_id = Guid.NewGuid().ToString("N");
+                        await SendClipboardImageAsync(connection, msg_id, base64, cancellation_token).ConfigureAwait(false);
+                    }
+                }
+            }
 
             while (!cancellation_token.IsCancellationRequested && !connection.IsClosed)
             {
@@ -624,6 +742,8 @@ public sealed class ClipboardSyncService : IDisposable
                 _channel,
                 _sender_id,
                 null,
+                null,
+                null,
                 null);
             await connection.SendAsync(pong_message, cancellation_token).ConfigureAwait(false);
         }
@@ -634,7 +754,17 @@ public sealed class ClipboardSyncService : IDisposable
         ClipboardMessage message,
         CancellationToken cancellation_token)
     {
-        if (string.IsNullOrWhiteSpace(message.MessageId) || message.Text == null) return;
+        if (string.IsNullOrWhiteSpace(message.MessageId)) return;
+
+        // Image message
+        if (message.Data != null && _clipboard_image_writer != null)
+        {
+            await HandleClipboardImageMessageAsync(connection, message, cancellation_token).ConfigureAwait(false);
+            return;
+        }
+
+        // Text message
+        if (message.Text == null) return;
 
         var text_size = Encoding.UTF8.GetByteCount(message.Text);
         if (text_size > MaxTextBytes) return;
@@ -670,6 +800,55 @@ public sealed class ClipboardSyncService : IDisposable
             _channel,
             _sender_id,
             message.MessageId,
+            null,
+            null,
+            null);
+        await connection.SendAsync(ack_message, cancellation_token).ConfigureAwait(false);
+    }
+
+    private async Task HandleClipboardImageMessageAsync(
+        PeerConnection connection,
+        ClipboardMessage message,
+        CancellationToken cancellation_token)
+    {
+        if (_clipboard_image_writer == null || message.MessageId == null) return;
+
+        var image_data = Convert.FromBase64String(message.Data!);
+        if (image_data.Length > MaxPayloadBytes) return;
+
+        if (!_received_message_ids.ContainsKey(message.MessageId))
+        {
+            await _poll_lock.WaitAsync(cancellation_token).ConfigureAwait(false);
+            try
+            {
+                if (!_received_message_ids.ContainsKey(message.MessageId))
+                {
+                    _last_clipboard_text = null;
+                    _last_clipboard_image_hash = ClipboardImageService.ComputeImageHash(image_data);
+                    _latest_local_update = null;
+                    await _clipboard_image_writer(image_data).ConfigureAwait(false);
+                    RememberReceivedMessage(message.MessageId);
+                    Report($"Clipboard image received: {image_data.Length} bytes from {connection.RemoteAddress}");
+                }
+                else
+                {
+                    RememberReceivedMessage(message.MessageId);
+                }
+            }
+            finally
+            {
+                _poll_lock.Release();
+            }
+        }
+
+        var ack_message = new ClipboardMessage(
+            ProtocolVersion,
+            "ack",
+            _channel,
+            _sender_id,
+            message.MessageId,
+            null,
+            null,
             null);
         await connection.SendAsync(ack_message, cancellation_token).ConfigureAwait(false);
     }
@@ -710,7 +889,7 @@ public sealed class ClipboardSyncService : IDisposable
         CancellationToken cancellation_token)
     {
         var payload = JsonSerializer.SerializeToUtf8Bytes(message);
-        if (payload.Length <= 0 || payload.Length > MaxPayloadBytes)
+        if (payload.Length <= 0)
             throw new InvalidDataException("Invalid clipboard TCP payload length.");
 
         var length_buffer = new byte[sizeof(int)];
@@ -764,7 +943,9 @@ public sealed class ClipboardSyncService : IDisposable
         string Channel,
         string SenderId,
         string? MessageId,
-        string? Text);
+        string? Text,
+        string? Data,
+        string? DataType);
 
     private sealed class PeerConnection
     {

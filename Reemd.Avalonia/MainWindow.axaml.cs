@@ -135,7 +135,9 @@ public partial class MainWindow : SukiWindow
             SetClipboardTextAsync,
             HasClipboardChangedAsync,
             _clipboardChannel,
-            clipboardPeers);
+            clipboardPeers,
+            GetClipboardImageAsync,
+            SetClipboardImageAsync);
         _clipboardSyncService.StatusChanged += ClipboardSyncService_StatusChanged;
         _gitHubService.LoadUsedRepos();
 
@@ -279,6 +281,16 @@ public partial class MainWindow : SukiWindow
         {
             _clipboardAccessLock.Release();
         }
+    }
+
+    private async Task<byte[]?> GetClipboardImageAsync()
+    {
+        return await ClipboardImageService.ReadImageAsync();
+    }
+
+    private async Task SetClipboardImageAsync(byte[] imagePngData)
+    {
+        await ClipboardImageService.WriteImageAsync(imagePngData);
     }
 
     private void ClipboardSyncService_StatusChanged(string message)
