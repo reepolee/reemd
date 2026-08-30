@@ -259,6 +259,21 @@ public partial class MainWindow
         {
             var clipboard_operation = Dispatcher.UIThread.InvokeAsync(async () =>
             {
+                if (TryGetNativeWindowsImage(clipboard_bundle, out var image_representation))
+                {
+                    var platform_handle = TryGetPlatformHandle();
+                    var owner_handle = platform_handle?.Handle ?? nint.Zero;
+                    using var clipboard_bitmap = CreateClipboardBitmap(image_representation);
+                    await WindowsClipboardImageWriter.WriteAsync(
+                        owner_handle,
+                        image_representation.Data,
+                        clipboard_bitmap);
+                    _clipboard_sync_logger.Log(
+                        $"Clipboard Windows native image applied: formats=PNG,CF_DIB, " +
+                        $"pixels={clipboard_bitmap.PixelSize.Width}x{clipboard_bitmap.PixelSize.Height}");
+                    return;
+                }
+
                 var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
                 if (clipboard == null)
                     throw new InvalidOperationException("Clipboard is unavailable.");
@@ -273,7 +288,14 @@ public partial class MainWindow
         }
         catch (Exception exception)
         {
-            _clipboard_sync_logger.Log($"Clipboard OS write error: error={exception.GetType().Name}");
+            if (exception is System.ComponentModel.Win32Exception windows_exception)
+            {
+                _clipboard_sync_logger.Log(
+                    $"Clipboard OS write error: error={exception.GetType().Name}, " +
+                    $"native_code={windows_exception.NativeErrorCode}, message={windows_exception.Message}");
+            }
+            else
+                _clipboard_sync_logger.Log($"Clipboard OS write error: error={exception.GetType().Name}");
             throw;
         }
         finally
@@ -333,13 +355,7 @@ public partial class MainWindow
 
             if (representation.FormatKind == "universal" && representation.ValueType == "bitmap")
             {
-                var bitmap_stream = new MemoryStream(representation.Data, writable: false);
-                var source_bitmap = new Bitmap(bitmap_stream);
-                bitmap_stream.Dispose();
-                var clipboard_bitmap = PrepareClipboardBitmap(source_bitmap);
-                if (!ReferenceEquals(source_bitmap, clipboard_bitmap))
-                    source_bitmap.Dispose();
-
+                var clipboard_bitmap = CreateClipboardBitmap(representation);
                 data_transfer_item.SetBitmap(clipboard_bitmap);
                 var pixel_size = clipboard_bitmap.PixelSize;
                 var pixel_format = clipboard_bitmap.Format?.ToString() ?? "unknown";
@@ -407,6 +423,37 @@ public partial class MainWindow
         }
 
         return false;
+    }
+
+    private static bool TryGetNativeWindowsImage(
+        ClipboardBundle clipboard_bundle,
+        out ClipboardRepresentation image_representation)
+    {
+        image_representation = null!;
+        if (!OperatingSystem.IsWindows() || clipboard_bundle.Items.Length != 1)
+            return false;
+
+        var representations = clipboard_bundle.Items[0].Representations;
+        if (representations.Length != 1)
+            return false;
+
+        var representation = representations[0];
+        if (representation.FormatKind != "universal" || representation.ValueType != "bitmap")
+            return false;
+
+        image_representation = representation;
+        return true;
+    }
+
+    private Bitmap CreateClipboardBitmap(ClipboardRepresentation representation)
+    {
+        using var bitmap_stream = new MemoryStream(representation.Data, writable: false);
+        var source_bitmap = new Bitmap(bitmap_stream);
+        var clipboard_bitmap = PrepareClipboardBitmap(source_bitmap);
+        if (!ReferenceEquals(source_bitmap, clipboard_bitmap))
+            source_bitmap.Dispose();
+
+        return clipboard_bitmap;
     }
 
     private Bitmap PrepareClipboardBitmap(Bitmap source_bitmap)
