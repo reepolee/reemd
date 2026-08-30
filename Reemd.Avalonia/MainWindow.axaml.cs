@@ -235,8 +235,8 @@ public partial class MainWindow : SukiWindow
     {
         if (_macClipboardChangeMonitor == null) return true;
 
-        var clipboardOperation = Dispatcher.UIThread.InvokeAsync(_macClipboardChangeMonitor.HasChanged);
-        return await clipboardOperation;
+        var changeCheckTask = Task.Run(_macClipboardChangeMonitor.HasChanged);
+        return await changeCheckTask;
     }
 
     private async Task SetClipboardTextAsync(string text)
