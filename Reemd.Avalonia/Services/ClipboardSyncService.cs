@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
@@ -25,6 +26,7 @@ public sealed class ClipboardSyncService : IDisposable
     private readonly ClipboardSyncLogger _logger = new();
     private string _channel;
     private string[] _peer_addresses;
+    private readonly ConcurrentDictionary<string, string> _sent_clipboard_text_by_peer = new(StringComparer.Ordinal);
     private string? _last_clipboard_text;
     private TcpListener? _listener;
     private CancellationTokenSource? _cancellation_token_source;
@@ -95,6 +97,7 @@ public sealed class ClipboardSyncService : IDisposable
         Stop();
         _channel = channel;
         _last_clipboard_text = null;
+        _sent_clipboard_text_by_peer.Clear();
         _logger.Log($"Clipboard channel changed: {channel}");
         Start();
     }
@@ -176,8 +179,23 @@ public sealed class ClipboardSyncService : IDisposable
                 if (!clipboard_changed) return;
             }
 
+            var peer_addresses = _peer_addresses;
             var clipboard_text = await _clipboard_text_reader().ConfigureAwait(false);
-            if (clipboard_text == null || clipboard_text == _last_clipboard_text) return;
+            if (clipboard_text == null) return;
+
+            if (peer_addresses.Length == 0)
+            {
+                Report("Clipboard change detected, but no TCP peers are configured");
+                return;
+            }
+
+            if (clipboard_text != _last_clipboard_text)
+                _sent_clipboard_text_by_peer.Clear();
+
+            var has_pending_peer = peer_addresses.Any(peer_address =>
+                !_sent_clipboard_text_by_peer.TryGetValue(peer_address, out var sent_clipboard_text) ||
+                sent_clipboard_text != clipboard_text);
+            if (clipboard_text == _last_clipboard_text && !has_pending_peer) return;
 
             _last_clipboard_text = clipboard_text;
             var envelope = new ClipboardEnvelope(1, _channel, _sender_id, clipboard_text);
@@ -188,19 +206,19 @@ public sealed class ClipboardSyncService : IDisposable
                 return;
             }
 
-            var peer_addresses = _peer_addresses;
-            if (peer_addresses.Length == 0)
-            {
-                Report("Clipboard change detected, but no TCP peers are configured");
-                return;
-            }
-
             var port = GetChannelPort(_channel);
             var sent_count = 0;
             foreach (var peer_address in peer_addresses)
             {
-                if (await SendEnvelopeAsync(peer_address, port, payload, cancellation_token).ConfigureAwait(false))
-                    sent_count++;
+                if (_sent_clipboard_text_by_peer.TryGetValue(peer_address, out var sent_clipboard_text) &&
+                    sent_clipboard_text == clipboard_text)
+                    continue;
+
+                var was_sent = await SendEnvelopeAsync(peer_address, port, payload, cancellation_token).ConfigureAwait(false);
+                if (!was_sent) continue;
+
+                _sent_clipboard_text_by_peer[peer_address] = clipboard_text;
+                sent_count++;
             }
 
             Report($"Clipboard sent: {payload.Length} bytes to {sent_count}/{peer_addresses.Length} TCP peer(s)");
