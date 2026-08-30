@@ -12,11 +12,12 @@ namespace Reemd.Services;
 /// </summary>
 public sealed class ClipboardSyncService : IDisposable
 {
-    private const int PollIntervalMs = 300;
+    private const int PollIntervalMs = 750;
     private const int MaxPayloadBytes = 48 * 1024;
 
     private readonly Func<Task<string?>> _clipboardTextReader;
     private readonly Func<string, Task> _clipboardTextWriter;
+    private readonly Func<Task<bool>> _clipboardChangeChecker;
     private readonly string _senderId = Guid.NewGuid().ToString("N");
     private readonly SemaphoreSlim _pollLock = new(1, 1);
     private readonly object _lifecycleLock = new();
@@ -34,10 +35,12 @@ public sealed class ClipboardSyncService : IDisposable
     public ClipboardSyncService(
         Func<Task<string?>> clipboardTextReader,
         Func<string, Task> clipboardTextWriter,
+        Func<Task<bool>> clipboardChangeChecker,
         string channel)
     {
         _clipboardTextReader = clipboardTextReader;
         _clipboardTextWriter = clipboardTextWriter;
+        _clipboardChangeChecker = clipboardChangeChecker;
         _channel = channel;
     }
 
@@ -141,6 +144,9 @@ public sealed class ClipboardSyncService : IDisposable
 
         try
         {
+            var clipboardChanged = await _clipboardChangeChecker().ConfigureAwait(false);
+            if (!clipboardChanged) return;
+
             var clipboardText = await _clipboardTextReader().ConfigureAwait(false);
             if (clipboardText == null || clipboardText == _lastClipboardText) return;
 

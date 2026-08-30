@@ -23,6 +23,10 @@ public partial class MainWindow : SukiWindow
     private readonly MarkdownConverter _markdownConverter = new();
     private readonly GitHubService _gitHubService = new();
     private readonly ClipboardSyncService _clipboardSyncService;
+    private readonly SemaphoreSlim _clipboardAccessLock = new(1, 1);
+    private readonly MacClipboardChangeMonitor? _macClipboardChangeMonitor = OperatingSystem.IsMacOS()
+        ? new MacClipboardChangeMonitor()
+        : null;
 
     private readonly HashSet<string> _pinnedFilenames = [];
     private readonly ObservableCollection<FileEntry> _fileList = [];
@@ -121,7 +125,11 @@ public partial class MainWindow : SukiWindow
         // Load settings first — restores window position, column widths, saved font sizes, etc.
         LoadSettings();
         ClipboardChannelBox.Text = _clipboardChannel;
-        _clipboardSyncService = new ClipboardSyncService(GetClipboardTextAsync, SetClipboardTextAsync, _clipboardChannel);
+        _clipboardSyncService = new ClipboardSyncService(
+            GetClipboardTextAsync,
+            SetClipboardTextAsync,
+            HasClipboardChangedAsync,
+            _clipboardChannel);
         _clipboardSyncService.StatusChanged += ClipboardSyncService_StatusChanged;
         _gitHubService.LoadUsedRepos();
 
@@ -207,23 +215,47 @@ public partial class MainWindow : SukiWindow
 
     private async Task<string?> GetClipboardTextAsync()
     {
-        var clipboardOperation = Dispatcher.UIThread.InvokeAsync(async () =>
+        await _clipboardAccessLock.WaitAsync();
+        try
         {
-            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
-            return clipboard == null ? null : await clipboard.TryGetTextAsync();
-        });
+            var clipboardOperation = Dispatcher.UIThread.InvokeAsync(async () =>
+            {
+                var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+                return clipboard == null ? null : await clipboard.TryGetTextAsync();
+            });
+            return await clipboardOperation;
+        }
+        finally
+        {
+            _clipboardAccessLock.Release();
+        }
+    }
+
+    private async Task<bool> HasClipboardChangedAsync()
+    {
+        if (_macClipboardChangeMonitor == null) return true;
+
+        var clipboardOperation = Dispatcher.UIThread.InvokeAsync(_macClipboardChangeMonitor.HasChanged);
         return await clipboardOperation;
     }
 
     private async Task SetClipboardTextAsync(string text)
     {
-        var clipboardOperation = Dispatcher.UIThread.InvokeAsync(async () =>
+        await _clipboardAccessLock.WaitAsync();
+        try
         {
-            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
-            if (clipboard != null)
-                await clipboard.SetTextAsync(text);
-        });
-        await clipboardOperation;
+            var clipboardOperation = Dispatcher.UIThread.InvokeAsync(async () =>
+            {
+                var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+                if (clipboard != null)
+                    await clipboard.SetTextAsync(text);
+            });
+            await clipboardOperation;
+        }
+        finally
+        {
+            _clipboardAccessLock.Release();
+        }
     }
 
     private void ClipboardSyncService_StatusChanged(string message)

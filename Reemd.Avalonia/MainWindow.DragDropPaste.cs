@@ -171,6 +171,19 @@ public partial class MainWindow
     /// </summary>
     private async void HandlePaste()
     {
+        await _clipboardAccessLock.WaitAsync();
+        try
+        {
+            await HandlePasteCoreAsync();
+        }
+        finally
+        {
+            _clipboardAccessLock.Release();
+        }
+    }
+
+    private async Task HandlePasteCoreAsync()
+    {
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
         if (clipboard == null)
         {
