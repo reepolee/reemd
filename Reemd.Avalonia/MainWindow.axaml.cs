@@ -22,6 +22,7 @@ public partial class MainWindow : SukiWindow
 {
     private readonly MarkdownConverter _markdownConverter = new();
     private readonly GitHubService _gitHubService = new();
+    private readonly ClipboardSyncLogger _clipboard_sync_logger = new();
     private readonly ClipboardSyncService _clipboardSyncService;
     private readonly SemaphoreSlim _clipboardAccessLock = new(1, 1);
     private readonly MacClipboardChangeMonitor? _mac_clipboard_change_monitor = OperatingSystem.IsMacOS()
@@ -136,6 +137,7 @@ public partial class MainWindow : SukiWindow
             GetClipboardBundleAsync,
             SetClipboardBundleAsync,
             HasClipboardChangedAsync,
+            _clipboard_sync_logger,
             _clipboardChannel,
             clipboardPeers);
         _clipboardSyncService.StatusChanged += ClipboardSyncService_StatusChanged;

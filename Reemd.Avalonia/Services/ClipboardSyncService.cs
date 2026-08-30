@@ -32,7 +32,7 @@ public sealed class ClipboardSyncService : IDisposable
     private readonly string _sender_id = Guid.NewGuid().ToString("N");
     private readonly SemaphoreSlim _poll_lock = new(1, 1);
     private readonly object _lifecycle_lock = new();
-    private readonly ClipboardSyncLogger _logger = new();
+    private readonly ClipboardSyncLogger _logger;
     private readonly ConcurrentDictionary<string, PeerConnection> _connections_by_sender = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, MdnsClipboardPeer> _discovered_peers_by_sender = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _connecting_endpoints = new(StringComparer.Ordinal);
@@ -56,12 +56,14 @@ public sealed class ClipboardSyncService : IDisposable
         Func<Task<ClipboardBundle?>> clipboard_reader,
         Func<ClipboardBundle, Task> clipboard_writer,
         Func<Task<bool>> clipboard_change_checker,
+        ClipboardSyncLogger logger,
         string channel,
         IEnumerable<string> peer_addresses)
     {
         _clipboard_reader = clipboard_reader;
         _clipboard_writer = clipboard_writer;
         _clipboard_change_checker = clipboard_change_checker;
+        _logger = logger;
         _channel = channel;
         _peer_addresses = peer_addresses.ToArray();
     }
@@ -240,13 +242,33 @@ public sealed class ClipboardSyncService : IDisposable
             {
                 var clipboard_changed = await _clipboard_change_checker().ConfigureAwait(false);
                 if (!clipboard_changed) return;
+
+                _logger.Log($"Clipboard change recognized: monitor={ClipboardBundle.GetCurrentPlatform()}");
             }
+            else
+                _logger.Log("Clipboard read forced by explicit publish request");
 
             var clipboard_bundle = await _clipboard_reader().ConfigureAwait(false);
-            if (clipboard_bundle == null || !TryValidateBundle(clipboard_bundle, out var bundle_size)) return;
+            if (clipboard_bundle == null)
+            {
+                _logger.Log("Clipboard read completed: no supported data captured");
+                return;
+            }
+
+            if (!TryValidateBundle(clipboard_bundle, out var bundle_size))
+            {
+                _logger.Log(
+                    $"Clipboard read rejected: source={clipboard_bundle.SourcePlatform}, " +
+                    $"formats=[{clipboard_bundle.DescribeFormats()}]");
+                return;
+            }
 
             var clipboard_fingerprint = GetBundleFingerprint(clipboard_bundle);
-            if (clipboard_fingerprint == _last_clipboard_fingerprint) return;
+            if (clipboard_fingerprint == _last_clipboard_fingerprint)
+            {
+                _logger.Log("Clipboard read skipped: content fingerprint already processed");
+                return;
+            }
 
             await PublishLocalClipboardAsync(
                 clipboard_bundle,
@@ -298,6 +320,9 @@ public sealed class ClipboardSyncService : IDisposable
         }
 
         _last_clipboard_fingerprint = clipboard_fingerprint;
+        _logger.Log(
+            $"Clipboard bundle ready: message={clipboard_update.MessageId}, source={clipboard_bundle.SourcePlatform}, " +
+            $"bytes={bundle_size}, formats=[{clipboard_bundle.DescribeFormats()}]");
         var connections = _connections_by_sender.Values.ToArray();
         if (connections.Length == 0)
         {
@@ -333,7 +358,13 @@ public sealed class ClipboardSyncService : IDisposable
 
         try
         {
+            _logger.Log(
+                $"Clipboard send started: message={clipboard_update.MessageId}, peer={connection.RemoteAddress}, " +
+                $"source={clipboard_update.Bundle.SourcePlatform}, bytes={clipboard_update.Bundle.GetByteCount()}, " +
+                $"formats=[{clipboard_update.Bundle.DescribeFormats()}]");
             await connection.SendAsync(message, cancellation_token).ConfigureAwait(false);
+            _logger.Log(
+                $"Clipboard send completed: message={clipboard_update.MessageId}, peer={connection.RemoteAddress}");
             return true;
         }
         catch (OperationCanceledException)
@@ -655,8 +686,24 @@ public sealed class ClipboardSyncService : IDisposable
         ClipboardMessage message,
         CancellationToken cancellation_token)
     {
-        if (string.IsNullOrWhiteSpace(message.MessageId) || message.Bundle == null) return;
-        if (!TryValidateBundle(message.Bundle, out var bundle_size)) return;
+        if (string.IsNullOrWhiteSpace(message.MessageId) || message.Bundle == null)
+        {
+            _logger.Log($"Clipboard receive rejected: peer={connection.RemoteAddress}, missing message ID or bundle");
+            return;
+        }
+
+        if (!TryValidateBundle(message.Bundle, out var bundle_size))
+        {
+            _logger.Log(
+                $"Clipboard receive rejected: message={message.MessageId}, peer={connection.RemoteAddress}, " +
+                $"source={message.Bundle.SourcePlatform}, formats=[{message.Bundle.DescribeFormats()}]");
+            return;
+        }
+
+        _logger.Log(
+            $"Clipboard bundle received: message={message.MessageId}, peer={connection.RemoteAddress}, " +
+            $"source={message.Bundle.SourcePlatform}, bytes={bundle_size}, " +
+            $"formats=[{message.Bundle.DescribeFormats()}]");
 
         var clipboard_fingerprint = GetBundleFingerprint(message.Bundle);
 
@@ -668,6 +715,7 @@ public sealed class ClipboardSyncService : IDisposable
                 if (!_received_message_ids.ContainsKey(message.MessageId) &&
                     clipboard_fingerprint != _last_clipboard_fingerprint)
                 {
+                    _logger.Log($"Clipboard apply started: message={message.MessageId}, peer={connection.RemoteAddress}");
                     await _clipboard_writer(message.Bundle).ConfigureAwait(false);
                     _last_clipboard_fingerprint = clipboard_fingerprint;
                     _latest_local_update = null;
@@ -676,6 +724,8 @@ public sealed class ClipboardSyncService : IDisposable
                 }
                 else if (!_received_message_ids.ContainsKey(message.MessageId))
                 {
+                    _logger.Log(
+                        $"Clipboard apply skipped: message={message.MessageId}, content fingerprint already processed");
                     RememberReceivedMessage(message.MessageId);
                 }
             }
@@ -693,6 +743,7 @@ public sealed class ClipboardSyncService : IDisposable
             message.MessageId,
             null);
         await connection.SendAsync(ack_message, cancellation_token).ConfigureAwait(false);
+        _logger.Log($"Clipboard acknowledgment sent: message={message.MessageId}, peer={connection.RemoteAddress}");
     }
 
     private void RememberReceivedMessage(string message_id)

@@ -3,11 +3,13 @@ using System.IO;
 namespace Reemd.Services;
 
 /// <summary>
-/// Appends timestamped, payload-free diagnostics for LAN clipboard synchronization.
+/// Writes timestamped, payload-free LAN clipboard diagnostics, resetting the file per app run.
 /// </summary>
 public sealed class ClipboardSyncLogger
 {
     private readonly string _logPath;
+    private readonly object _write_lock = new();
+    private long _entry_number;
 
     public ClipboardSyncLogger()
     {
@@ -15,6 +17,16 @@ public sealed class ClipboardSyncLogger
         var directoryPath = Path.Combine(appData, "Reemd");
         Directory.CreateDirectory(directoryPath);
         _logPath = Path.Combine(directoryPath, "clipboard-sync.log");
+
+        try
+        {
+            File.WriteAllText(_logPath, string.Empty);
+        }
+        catch
+        {
+        }
+
+        Log($"Clipboard log started: platform={ClipboardBundle.GetCurrentPlatform()}, process={Environment.ProcessId}");
     }
 
     public string LogPath => _logPath;
@@ -23,8 +35,12 @@ public sealed class ClipboardSyncLogger
     {
         try
         {
-            var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}";
-            File.AppendAllText(_logPath, line + Environment.NewLine);
+            lock (_write_lock)
+            {
+                _entry_number++;
+                var line = $"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss.fff zzz}] [{_entry_number:D5}] {message}";
+                File.AppendAllText(_logPath, line + Environment.NewLine);
+            }
         }
         catch
         {
