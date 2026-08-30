@@ -114,7 +114,7 @@ public partial class MainWindow
     private void UpdateTitle(string? filePath)
     {
         var fileName = filePath != null ? Path.GetFileName(filePath) : "Untitled";
-        Title = $"ReeMD - {fileName}";
+        Title = $"ReeMD v{GetAppVersion()} - {fileName}";
     }
 
     private void AutoSaveTimer_Tick(object? sender, EventArgs e)
