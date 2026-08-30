@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
@@ -22,7 +23,7 @@ public sealed class ClipboardSyncService : IDisposable
     private readonly ClipboardSyncLogger _logger = new();
     private string _channel;
     private string? _lastClipboardText;
-    private UdpClient? _udpClient;
+    private readonly List<UdpClient> _udpClients = [];
     private CancellationTokenSource? _cancellationTokenSource;
 
     public event Action<string>? StatusChanged;
@@ -52,35 +53,32 @@ public sealed class ClipboardSyncService : IDisposable
         {
             if (_cancellationTokenSource != null) return;
 
-            UdpClient? udpClient = null;
-            try
+            var endpoint = GetChannelEndpoint(_channel);
+            var localAddresses = GetLocalMulticastAddresses();
+            foreach (var localAddress in localAddresses)
             {
-                var endpoint = GetChannelEndpoint(_channel);
-                udpClient = new UdpClient(AddressFamily.InterNetwork);
-                udpClient.ExclusiveAddressUse = false;
-                udpClient.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-                udpClient.Client.Bind(new IPEndPoint(IPAddress.Any, endpoint.Port));
-                udpClient.JoinMulticastGroup(endpoint.Address);
-                udpClient.MulticastLoopback = true;
+                TryAddMulticastClient(endpoint, localAddress);
+            }
 
-                var cancellationTokenSource = new CancellationTokenSource();
-                _udpClient = udpClient;
-                _cancellationTokenSource = cancellationTokenSource;
+            if (_udpClients.Count == 0)
+            {
+                Report("Clipboard listener error: no active IPv4 multicast interface");
+                return;
+            }
 
+            var cancellationTokenSource = new CancellationTokenSource();
+            _cancellationTokenSource = cancellationTokenSource;
+
+            foreach (var udpClient in _udpClients)
+            {
                 _ = ReceiveLoopAsync(udpClient, cancellationTokenSource.Token);
-                _ = PollClipboardLoopAsync(cancellationTokenSource.Token);
-                Report($"Clipboard listening: {_channel} ({endpoint.Address}:{endpoint.Port})");
             }
-            catch (SocketException exception)
-            {
-                udpClient?.Dispose();
-                Report($"Clipboard listener error: {exception.SocketErrorCode}");
-            }
-            catch (Exception exception)
-            {
-                udpClient?.Dispose();
-                Report($"Clipboard listener error: {exception.GetType().Name}");
-            }
+            _ = PollClipboardLoopAsync(cancellationTokenSource.Token);
+
+            var activeInterfaceAddresses = _udpClients
+                .Select(udpClient => ((IPEndPoint)udpClient.Client.LocalEndPoint!).Address);
+            var interfaceNames = string.Join(", ", activeInterfaceAddresses);
+            Report($"Clipboard listening: {_channel} ({endpoint.Address}:{endpoint.Port}) via {interfaceNames}");
         }
     }
 
@@ -100,12 +98,15 @@ public sealed class ClipboardSyncService : IDisposable
         lock (_lifecycleLock)
         {
             var cancellationTokenSource = _cancellationTokenSource;
-            var udpClient = _udpClient;
             _cancellationTokenSource = null;
-            _udpClient = null;
+            var udpClients = _udpClients.ToArray();
+            _udpClients.Clear();
 
             cancellationTokenSource?.Cancel();
-            udpClient?.Dispose();
+            foreach (var udpClient in udpClients)
+            {
+                udpClient.Dispose();
+            }
             cancellationTokenSource?.Dispose();
             _logger.Log("Clipboard listener stopped");
         }
@@ -145,12 +146,32 @@ public sealed class ClipboardSyncService : IDisposable
                 return;
             }
 
-            var udpClient = _udpClient;
-            if (udpClient == null) return;
+            UdpClient[] udpClients;
+            lock (_lifecycleLock)
+            {
+                udpClients = _udpClients.ToArray();
+            }
+            if (udpClients.Length == 0) return;
 
             var endpoint = GetChannelEndpoint(_channel);
-            await udpClient.SendAsync(payload, endpoint, cancellationToken).ConfigureAwait(false);
-            Report($"Clipboard sent: {payload.Length} bytes on {_channel}");
+            var sentCount = 0;
+            foreach (var udpClient in udpClients)
+            {
+                try
+                {
+                    await udpClient.SendAsync(payload, endpoint, cancellationToken).ConfigureAwait(false);
+                    sentCount++;
+                }
+                catch (SocketException exception)
+                {
+                    _logger.Log($"Clipboard send failed on {udpClient.Client.LocalEndPoint}: {exception.SocketErrorCode}");
+                }
+            }
+
+            if (sentCount > 0)
+                Report($"Clipboard sent: {payload.Length} bytes on {_channel} via {sentCount} interface(s)");
+            else
+                Report("Clipboard send error: no active interface could reach the multicast group");
         }
         catch (OperationCanceledException)
         {
@@ -224,6 +245,47 @@ public sealed class ClipboardSyncService : IDisposable
         var multicastAddress = new IPAddress([239, 192, hash[0], hash[1]]);
         var port = 45000 + ((hash[2] << 8 | hash[3]) % 1000);
         return new IPEndPoint(multicastAddress, port);
+    }
+
+    private void TryAddMulticastClient(IPEndPoint endpoint, IPAddress localAddress)
+    {
+        UdpClient? udpClient = null;
+        try
+        {
+            udpClient = new UdpClient(AddressFamily.InterNetwork);
+            udpClient.ExclusiveAddressUse = false;
+            udpClient.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+            udpClient.Client.Bind(new IPEndPoint(localAddress, endpoint.Port));
+            udpClient.JoinMulticastGroup(endpoint.Address, localAddress);
+            udpClient.Client.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastInterface, localAddress.GetAddressBytes());
+            udpClient.MulticastLoopback = true;
+            _udpClients.Add(udpClient);
+        }
+        catch (SocketException exception)
+        {
+            udpClient?.Dispose();
+            _logger.Log($"Clipboard interface unavailable: {localAddress} ({exception.SocketErrorCode})");
+        }
+    }
+
+    private static IPAddress[] GetLocalMulticastAddresses()
+    {
+        var networkInterfaces = NetworkInterface.GetAllNetworkInterfaces();
+        var eligibleInterfaces = networkInterfaces
+            .Where(networkInterface =>
+                networkInterface.OperationalStatus == OperationalStatus.Up &&
+                networkInterface.SupportsMulticast &&
+                networkInterface.NetworkInterfaceType != NetworkInterfaceType.Loopback);
+        var unicastAddresses = eligibleInterfaces
+            .SelectMany(networkInterface => networkInterface.GetIPProperties().UnicastAddresses);
+        var ipv4Addresses = unicastAddresses
+            .Select(unicastAddress => unicastAddress.Address)
+            .Where(address =>
+                address.AddressFamily == AddressFamily.InterNetwork &&
+                !IPAddress.IsLoopback(address) &&
+                !address.ToString().StartsWith("169.254.", StringComparison.Ordinal));
+        var localAddresses = ipv4Addresses.Distinct().ToArray();
+        return localAddresses;
     }
 
     public void Dispose()
