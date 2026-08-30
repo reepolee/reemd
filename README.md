@@ -185,7 +185,7 @@ folder).
 
 ## LAN clipboard sync
 
-ReeMD checks the operating system text clipboard and shares changes by UDP multicast with
+ReeMD checks the operating system text clipboard and shares changes by UDP broadcast with
 other ReeMD instances on the same LAN clipboard channel. The channel is shown as `LAN clip:`
 in the toolbar and defaults to `ree-md`.
 
