@@ -11,18 +11,17 @@ public sealed class MacClipboardChangeMonitor
 {
     private const int ReadTimeoutMs = 1500;
 
-    private nint? _last_change_count;
+    private nint? _last_processed_change_count;
+    private nint? _pending_change_count;
 
     public bool HasChanged()
     {
-        var pasteboard_class = objc_getClass("NSPasteboard");
-        var general_pasteboard_selector = sel_registerName("generalPasteboard");
-        var pasteboard = objc_msgSend_intptr(pasteboard_class, general_pasteboard_selector);
-        var change_count_selector = sel_registerName("changeCount");
-        var current_change_count = objc_msgSend_nint(pasteboard, change_count_selector);
+        var current_change_count = ReadChangeCount();
+        var has_changed = _last_processed_change_count == null ||
+            _last_processed_change_count != current_change_count;
+        if (has_changed)
+            _pending_change_count = current_change_count;
 
-        var has_changed = _last_change_count == null || _last_change_count != current_change_count;
-        _last_change_count = current_change_count;
         return has_changed;
     }
 
@@ -48,6 +47,8 @@ public sealed class MacClipboardChangeMonitor
             if (process.ExitCode != 0)
                 throw new InvalidOperationException($"macOS clipboard reader exited with code {process.ExitCode}.");
 
+            _last_processed_change_count = _pending_change_count;
+            _pending_change_count = null;
             return clipboard_text;
         }
         catch (OperationCanceledException)
@@ -57,6 +58,15 @@ public sealed class MacClipboardChangeMonitor
 
             throw new TimeoutException("macOS clipboard reader timed out.");
         }
+    }
+
+    private static nint ReadChangeCount()
+    {
+        var pasteboard_class = objc_getClass("NSPasteboard");
+        var general_pasteboard_selector = sel_registerName("generalPasteboard");
+        var pasteboard = objc_msgSend_intptr(pasteboard_class, general_pasteboard_selector);
+        var change_count_selector = sel_registerName("changeCount");
+        return objc_msgSend_nint(pasteboard, change_count_selector);
     }
 
     [DllImport("/usr/lib/libobjc.A.dylib")]

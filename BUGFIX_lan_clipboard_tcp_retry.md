@@ -15,7 +15,7 @@ Two independent send-side faults caused this behavior:
 
 Track the last successfully sent text per peer. A peer that fails to receive the current text remains pending and is retried by the polling loop. Peers that already received it are not sent duplicate updates. The tracking state resets for every new local clipboard value, so each new value is delivered to every configured peer.
 
-On macOS, use the native pasteboard change counter to detect a real change, then read text through `/usr/bin/pbpaste` off the Avalonia UI thread. Explicit ReeMD copy publishes now wait for the send lock instead of being discarded.
+On macOS, use the native pasteboard change counter to detect a real change, then read text through `/usr/bin/pbpaste` off the Avalonia UI thread. A change is acknowledged only after its text is read successfully. Pending TCP deliveries retry from the captured text without reading the clipboard again. Explicit ReeMD copy publishes now wait for the send lock instead of being discarded.
 
 ## Verification
 

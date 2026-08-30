@@ -193,7 +193,14 @@ public sealed class ClipboardSyncService : IDisposable
             if (!force_publish)
             {
                 var clipboard_changed = await _clipboard_change_checker().ConfigureAwait(false);
-                if (!clipboard_changed) return;
+                if (!clipboard_changed)
+                {
+                    var pending_clipboard_text = _last_clipboard_text;
+                    if (pending_clipboard_text == null || !HasPendingPeer(pending_clipboard_text)) return;
+
+                    await SendClipboardTextAsync(pending_clipboard_text, cancellation_token).ConfigureAwait(false);
+                    return;
+                }
             }
 
             var clipboard_text = await _clipboard_text_reader().ConfigureAwait(false);
@@ -256,6 +263,14 @@ public sealed class ClipboardSyncService : IDisposable
         }
 
         Report($"Clipboard sent: {payload.Length} bytes to {sent_count}/{peer_addresses.Length} TCP peer(s)");
+    }
+
+    private bool HasPendingPeer(string clipboard_text)
+    {
+        var peer_addresses = _peer_addresses;
+        return peer_addresses.Any(peer_address =>
+            !_sent_clipboard_text_by_peer.TryGetValue(peer_address, out var sent_clipboard_text) ||
+            sent_clipboard_text != clipboard_text);
     }
 
     private async Task<bool> SendEnvelopeAsync(string peer_address, int port, byte[] payload, CancellationToken cancellation_token)
