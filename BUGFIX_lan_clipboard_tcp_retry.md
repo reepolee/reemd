@@ -1,17 +1,24 @@
-# LAN clipboard TCP delivery retry
+# LAN clipboard send recovery
 
 ## Symptom
 
-macOS reported `HostUnreachable` while sending clipboard text to the configured Windows peer, even though the Windows instance could send to macOS.
+macOS reported `HostUnreachable` while sending clipboard text to the configured Windows peer, even though the Windows instance could send to macOS. Later, copying from ReeMD or VS Code produced no outbound clipboard update while receiving from Windows continued to work.
 
 ## Cause
 
-`ClipboardSyncService` assigned `_last_clipboard_text` before attempting delivery. A failed TCP connection therefore made the polling loop treat the unchanged clipboard as already synchronized, with no later retry.
+Two independent send-side faults caused this behavior:
+
+- `ClipboardSyncService` assigned `_last_clipboard_text` before attempting delivery. A failed TCP connection therefore made the polling loop treat the unchanged clipboard as already synchronized, with no later retry.
+- macOS clipboard polling was disabled to avoid blocking Avalonia clipboard reads. This prevented external copies from ever being detected. ReeMD's explicit copy publish also used a zero-timeout send lock, so a busy lock silently discarded the copy.
 
 ## Fix
 
 Track the last successfully sent text per peer. A peer that fails to receive the current text remains pending and is retried by the polling loop. Peers that already received it are not sent duplicate updates. The tracking state resets for every new local clipboard value, so each new value is delivered to every configured peer.
 
+On macOS, use the native pasteboard change counter to detect a real change, then read text through `/usr/bin/pbpaste` off the Avalonia UI thread. Explicit ReeMD copy publishes now wait for the send lock instead of being discarded.
+
 ## Verification
 
-At investigation time, `192.168.168.70:45904` accepted a TCP connection from this Mac and responded to ping. The earlier `HostUnreachable` was transient network state; the service now recovers automatically instead of dropping the update.
+At the first investigation, `192.168.168.70:45904` accepted a TCP connection from this Mac and responded to ping. The earlier `HostUnreachable` was transient network state; the service now recovers automatically instead of dropping the update.
+
+The macOS regression is covered by separating change detection and text reads from Avalonia's UI clipboard path. End-to-end delivery still requires verification with the configured Windows peer running and reachable.

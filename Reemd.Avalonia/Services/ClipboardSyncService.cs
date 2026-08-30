@@ -138,7 +138,7 @@ public sealed class ClipboardSyncService : IDisposable
     public async Task PublishClipboardTextAsync(string clipboard_text)
     {
         _logger.Log($"Clipboard publish requested: {Encoding.UTF8.GetByteCount(clipboard_text)} bytes");
-        if (!await _poll_lock.WaitAsync(0).ConfigureAwait(false)) return;
+        await _poll_lock.WaitAsync().ConfigureAwait(false);
 
         try
         {
