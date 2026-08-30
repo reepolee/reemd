@@ -1,6 +1,4 @@
-using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Text;
 
 namespace Reemd.Services;
 
@@ -9,8 +7,6 @@ namespace Reemd.Services;
 /// </summary>
 public sealed class MacClipboardChangeMonitor
 {
-    private const int ReadTimeoutMs = 1500;
-
     private nint? _last_processed_change_count;
     private nint? _pending_change_count;
 
@@ -23,41 +19,6 @@ public sealed class MacClipboardChangeMonitor
             _pending_change_count = current_change_count;
 
         return has_changed;
-    }
-
-    public async Task<string> ReadTextAsync()
-    {
-        var start_info = new ProcessStartInfo
-        {
-            FileName = "/usr/bin/pbpaste",
-            RedirectStandardOutput = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            StandardOutputEncoding = Encoding.UTF8
-        };
-        using var process = Process.Start(start_info) ??
-            throw new InvalidOperationException("Cannot start the macOS clipboard reader.");
-        using var timeout_token_source = new CancellationTokenSource(ReadTimeoutMs);
-        var output_task = process.StandardOutput.ReadToEndAsync(timeout_token_source.Token);
-
-        try
-        {
-            await process.WaitForExitAsync(timeout_token_source.Token).ConfigureAwait(false);
-            var clipboard_text = await output_task.ConfigureAwait(false);
-            if (process.ExitCode != 0)
-                throw new InvalidOperationException($"macOS clipboard reader exited with code {process.ExitCode}.");
-
-            _last_processed_change_count = _pending_change_count;
-            _pending_change_count = null;
-            return clipboard_text;
-        }
-        catch (OperationCanceledException)
-        {
-            if (!process.HasExited)
-                process.Kill(entireProcessTree: true);
-
-            throw new TimeoutException("macOS clipboard reader timed out.");
-        }
     }
 
     public void AcknowledgeCurrent()

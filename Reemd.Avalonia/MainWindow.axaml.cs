@@ -4,7 +4,6 @@ using System.Reflection;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
-using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -27,6 +26,9 @@ public partial class MainWindow : SukiWindow
     private readonly SemaphoreSlim _clipboardAccessLock = new(1, 1);
     private readonly MacClipboardChangeMonitor? _mac_clipboard_change_monitor = OperatingSystem.IsMacOS()
         ? new MacClipboardChangeMonitor()
+        : null;
+    private readonly WindowsClipboardChangeMonitor? _windows_clipboard_change_monitor = OperatingSystem.IsWindows()
+        ? new WindowsClipboardChangeMonitor()
         : null;
 
     private readonly HashSet<string> _pinnedFilenames = [];
@@ -131,8 +133,8 @@ public partial class MainWindow : SukiWindow
         ClipboardPeersBox.Text = _clipboardPeers;
         TryParseClipboardPeers(_clipboardPeers, out var clipboardPeers);
         _clipboardSyncService = new ClipboardSyncService(
-            GetClipboardTextAsync,
-            SetClipboardTextAsync,
+            GetClipboardBundleAsync,
+            SetClipboardBundleAsync,
             HasClipboardChangedAsync,
             _clipboardChannel,
             clipboardPeers);
@@ -228,57 +230,6 @@ public partial class MainWindow : SukiWindow
         Loaded -= OnWindowLoaded;
         ApplyPreviewFontSize();
         _clipboardSyncService.Start();
-    }
-
-    private async Task<string?> GetClipboardTextAsync()
-    {
-        if (_mac_clipboard_change_monitor != null)
-            return await _mac_clipboard_change_monitor.ReadTextAsync();
-
-        await _clipboardAccessLock.WaitAsync();
-        try
-        {
-            var clipboardOperation = Dispatcher.UIThread.InvokeAsync(async () =>
-            {
-                var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
-                return clipboard == null ? null : await clipboard.TryGetTextAsync();
-            });
-            return await clipboardOperation;
-        }
-        finally
-        {
-            _clipboardAccessLock.Release();
-        }
-    }
-
-    private Task<bool> HasClipboardChangedAsync()
-    {
-        var clipboard_changed = _mac_clipboard_change_monitor?.HasChanged() ?? true;
-        return Task.FromResult(clipboard_changed);
-    }
-
-    private Task PublishClipboardAsync(string clipboard_text)
-    {
-        return Task.Run(() => _clipboardSyncService.PublishClipboardTextAsync(clipboard_text));
-    }
-
-    private async Task SetClipboardTextAsync(string text)
-    {
-        await _clipboardAccessLock.WaitAsync();
-        try
-        {
-            var clipboardOperation = Dispatcher.UIThread.InvokeAsync(async () =>
-            {
-                var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
-                if (clipboard != null)
-                    await clipboard.SetTextAsync(text);
-            });
-            await clipboardOperation;
-        }
-        finally
-        {
-            _clipboardAccessLock.Release();
-        }
     }
 
     private void ClipboardSyncService_StatusChanged(string message)

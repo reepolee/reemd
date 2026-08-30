@@ -9,22 +9,25 @@ using System.Text.Json;
 namespace Reemd.Services;
 
 /// <summary>
-/// Synchronizes text clipboard changes with LAN peers over persistent TCP connections.
+/// Synchronizes clipboard changes with LAN peers over persistent TCP connections.
 /// </summary>
 public sealed class ClipboardSyncService : IDisposable
 {
-    private const int ProtocolVersion = 2;
+    private const int ProtocolVersion = 3;
     private const int PollIntervalMs = 750;
     private const int ConnectionCheckIntervalMs = 2000;
     private const int HeartbeatIntervalSeconds = 10;
     private const int HeartbeatTimeoutMs = 30_000;
     private const int ConnectTimeoutMs = 3000;
     private const int HandshakeTimeoutMs = 3000;
-    private const int MaxTextBytes = 48 * 1024;
-    private const int MaxPayloadBytes = 64 * 1024;
+    private const int MaxClipboardItems = 16;
+    private const int MaxClipboardRepresentations = 32;
+    private const int MaxRepresentationBytes = 10 * 1024 * 1024;
+    private const int MaxBundleBytes = 10 * 1024 * 1024;
+    private const int MaxPayloadBytes = 16 * 1024 * 1024;
 
-    private readonly Func<Task<string?>> _clipboard_text_reader;
-    private readonly Func<string, Task> _clipboard_text_writer;
+    private readonly Func<Task<ClipboardBundle?>> _clipboard_reader;
+    private readonly Func<ClipboardBundle, Task> _clipboard_writer;
     private readonly Func<Task<bool>> _clipboard_change_checker;
     private readonly string _sender_id = Guid.NewGuid().ToString("N");
     private readonly SemaphoreSlim _poll_lock = new(1, 1);
@@ -38,7 +41,7 @@ public sealed class ClipboardSyncService : IDisposable
     private readonly ConcurrentQueue<string> _received_message_order = new();
     private string _channel;
     private string[] _peer_addresses;
-    private string? _last_clipboard_text;
+    private string? _last_clipboard_fingerprint;
     private ClipboardUpdate? _latest_local_update;
     private TcpListener? _listener;
     private MdnsClipboardDiscovery? _mdns_discovery;
@@ -50,14 +53,14 @@ public sealed class ClipboardSyncService : IDisposable
     public string LogPath => _logger.LogPath;
 
     public ClipboardSyncService(
-        Func<Task<string?>> clipboard_text_reader,
-        Func<string, Task> clipboard_text_writer,
+        Func<Task<ClipboardBundle?>> clipboard_reader,
+        Func<ClipboardBundle, Task> clipboard_writer,
         Func<Task<bool>> clipboard_change_checker,
         string channel,
         IEnumerable<string> peer_addresses)
     {
-        _clipboard_text_reader = clipboard_text_reader;
-        _clipboard_text_writer = clipboard_text_writer;
+        _clipboard_reader = clipboard_reader;
+        _clipboard_writer = clipboard_writer;
         _clipboard_change_checker = clipboard_change_checker;
         _channel = channel;
         _peer_addresses = peer_addresses.ToArray();
@@ -126,7 +129,7 @@ public sealed class ClipboardSyncService : IDisposable
 
         Stop();
         _channel = channel;
-        _last_clipboard_text = null;
+        _last_clipboard_fingerprint = null;
         _latest_local_update = null;
         _discovered_peers_by_sender.Clear();
         _acked_message_by_sender.Clear();
@@ -172,7 +175,8 @@ public sealed class ClipboardSyncService : IDisposable
 
         try
         {
-            await PublishLocalClipboardTextAsync(clipboard_text, CancellationToken.None).ConfigureAwait(false);
+            var clipboard_bundle = ClipboardBundle.CreateText(clipboard_text);
+            await PublishLocalClipboardAsync(clipboard_bundle, CancellationToken.None).ConfigureAwait(false);
         }
         finally
         {
@@ -238,10 +242,17 @@ public sealed class ClipboardSyncService : IDisposable
                 if (!clipboard_changed) return;
             }
 
-            var clipboard_text = await _clipboard_text_reader().ConfigureAwait(false);
-            if (clipboard_text == null || clipboard_text == _last_clipboard_text) return;
+            var clipboard_bundle = await _clipboard_reader().ConfigureAwait(false);
+            if (clipboard_bundle == null || !TryValidateBundle(clipboard_bundle, out var bundle_size)) return;
 
-            await PublishLocalClipboardTextAsync(clipboard_text, cancellation_token).ConfigureAwait(false);
+            var clipboard_fingerprint = GetBundleFingerprint(clipboard_bundle);
+            if (clipboard_fingerprint == _last_clipboard_fingerprint) return;
+
+            await PublishLocalClipboardAsync(
+                clipboard_bundle,
+                cancellation_token,
+                clipboard_fingerprint,
+                bundle_size).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -256,31 +267,41 @@ public sealed class ClipboardSyncService : IDisposable
         }
     }
 
-    private async Task PublishLocalClipboardTextAsync(string clipboard_text, CancellationToken cancellation_token)
+    private async Task PublishLocalClipboardAsync(
+        ClipboardBundle clipboard_bundle,
+        CancellationToken cancellation_token,
+        string? clipboard_fingerprint = null,
+        int? known_bundle_size = null)
     {
-        var text_size = Encoding.UTF8.GetByteCount(clipboard_text);
-        if (text_size > MaxTextBytes)
+        if (!TryValidateBundle(clipboard_bundle, out var bundle_size))
         {
-            Report($"Clipboard update skipped: {text_size} bytes exceeds {MaxTextBytes} byte limit");
+            Report("Clipboard update skipped: unsupported or oversized clipboard data");
             return;
         }
 
+        if (known_bundle_size != null)
+            bundle_size = known_bundle_size.Value;
+
+        clipboard_fingerprint ??= GetBundleFingerprint(clipboard_bundle);
         ClipboardUpdate clipboard_update;
-        if (_latest_local_update is { } latest_update && latest_update.Text == clipboard_text)
+        if (_latest_local_update is { } latest_update && latest_update.Fingerprint == clipboard_fingerprint)
         {
             clipboard_update = latest_update;
         }
         else
         {
-            clipboard_update = new ClipboardUpdate(Guid.NewGuid().ToString("N"), clipboard_text);
+            clipboard_update = new ClipboardUpdate(
+                Guid.NewGuid().ToString("N"),
+                clipboard_bundle,
+                clipboard_fingerprint);
             _latest_local_update = clipboard_update;
         }
 
-        _last_clipboard_text = clipboard_text;
+        _last_clipboard_fingerprint = clipboard_fingerprint;
         var connections = _connections_by_sender.Values.ToArray();
         if (connections.Length == 0)
         {
-            Report($"Clipboard queued: {text_size} bytes, no connected peers");
+            Report($"Clipboard queued: {bundle_size} bytes, no connected peers");
             return;
         }
 
@@ -288,7 +309,7 @@ public sealed class ClipboardSyncService : IDisposable
             SendClipboardUpdateAsync(connection, clipboard_update, cancellation_token));
         var send_results = await Task.WhenAll(send_tasks).ConfigureAwait(false);
         var sent_count = send_results.Count(was_sent => was_sent);
-        Report($"Clipboard sent: {text_size} bytes to {sent_count}/{connections.Length} connected peer(s)");
+        Report($"Clipboard sent: {bundle_size} bytes to {sent_count}/{connections.Length} connected peer(s)");
     }
 
     private async Task<bool> SendClipboardUpdateAsync(
@@ -308,7 +329,7 @@ public sealed class ClipboardSyncService : IDisposable
             _channel,
             _sender_id,
             clipboard_update.MessageId,
-            clipboard_update.Text);
+            clipboard_update.Bundle);
 
         try
         {
@@ -634,10 +655,10 @@ public sealed class ClipboardSyncService : IDisposable
         ClipboardMessage message,
         CancellationToken cancellation_token)
     {
-        if (string.IsNullOrWhiteSpace(message.MessageId) || message.Text == null) return;
+        if (string.IsNullOrWhiteSpace(message.MessageId) || message.Bundle == null) return;
+        if (!TryValidateBundle(message.Bundle, out var bundle_size)) return;
 
-        var text_size = Encoding.UTF8.GetByteCount(message.Text);
-        if (text_size > MaxTextBytes) return;
+        var clipboard_fingerprint = GetBundleFingerprint(message.Bundle);
 
         if (!_received_message_ids.ContainsKey(message.MessageId))
         {
@@ -645,13 +666,13 @@ public sealed class ClipboardSyncService : IDisposable
             try
             {
                 if (!_received_message_ids.ContainsKey(message.MessageId) &&
-                    message.Text != _last_clipboard_text)
+                    clipboard_fingerprint != _last_clipboard_fingerprint)
                 {
-                    _last_clipboard_text = message.Text;
+                    await _clipboard_writer(message.Bundle).ConfigureAwait(false);
+                    _last_clipboard_fingerprint = clipboard_fingerprint;
                     _latest_local_update = null;
-                    await _clipboard_text_writer(message.Text).ConfigureAwait(false);
                     RememberReceivedMessage(message.MessageId);
-                    Report($"Clipboard received: {text_size} bytes from {connection.RemoteAddress}");
+                    Report($"Clipboard received: {bundle_size} bytes from {connection.RemoteAddress}");
                 }
                 else if (!_received_message_ids.ContainsKey(message.MessageId))
                 {
@@ -742,6 +763,45 @@ public sealed class ClipboardSyncService : IDisposable
         return 45000 + ((hash[2] << 8 | hash[3]) % 1000);
     }
 
+    private static bool TryValidateBundle(ClipboardBundle clipboard_bundle, out int bundle_size)
+    {
+        bundle_size = 0;
+        if (clipboard_bundle.Items.Length is <= 0 or > MaxClipboardItems) return false;
+        if (clipboard_bundle.SourcePlatform is not ("windows" or "macos" or "linux" or "unknown"))
+            return false;
+
+        var representation_count = 0;
+        foreach (var item in clipboard_bundle.Items)
+        {
+            if (item.Representations.Length <= 0) return false;
+
+            foreach (var representation in item.Representations)
+            {
+                representation_count++;
+                if (representation_count > MaxClipboardRepresentations) return false;
+                if (string.IsNullOrWhiteSpace(representation.Identifier) ||
+                    representation.Identifier.Length > 256)
+                    return false;
+                if (representation.ValueType is not ("text" or "bitmap" or "bytes" or "string"))
+                    return false;
+                if (representation.FormatKind is not ("universal" or "application" or "platform"))
+                    return false;
+                if (representation.Data.Length > MaxRepresentationBytes) return false;
+                bundle_size += representation.Data.Length;
+                if (bundle_size > MaxBundleBytes) return false;
+            }
+        }
+
+        return representation_count > 0;
+    }
+
+    private static string GetBundleFingerprint(ClipboardBundle clipboard_bundle)
+    {
+        var bundle_bytes = JsonSerializer.SerializeToUtf8Bytes(clipboard_bundle);
+        var fingerprint_bytes = SHA256.HashData(bundle_bytes);
+        return Convert.ToHexString(fingerprint_bytes);
+    }
+
     public void Dispose()
     {
         Stop();
@@ -754,7 +814,10 @@ public sealed class ClipboardSyncService : IDisposable
         StatusChanged?.Invoke(message);
     }
 
-    private sealed record ClipboardUpdate(string MessageId, string Text);
+    private sealed record ClipboardUpdate(
+        string MessageId,
+        ClipboardBundle Bundle,
+        string Fingerprint);
 
     private sealed record PeerTarget(string Address, int Port);
 
@@ -764,7 +827,7 @@ public sealed class ClipboardSyncService : IDisposable
         string Channel,
         string SenderId,
         string? MessageId,
-        string? Text);
+        ClipboardBundle? Bundle);
 
     private sealed class PeerConnection
     {

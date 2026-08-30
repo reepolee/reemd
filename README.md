@@ -12,7 +12,7 @@ sync, and system-wide hotkeys. Built on [.NET 10](https://dotnet.microsoft.com/)
 - **New Issue dialog** — file GitHub issues against `reepolee/ree*` repos without leaving the editor (`Ctrl+Alt+I`).
 - **Project shortcuts** — up to 9 toolbar buttons that open a project folder, VS Code, and a terminal in one keystroke (`Ctrl+Shift+1..9` by default).
 - **Global hotkeys** — toggle the window from anywhere (`Ctrl+Shift+Space`) and a tray/menu-bar icon.
-- **LAN clipboard sync** - share text clipboard changes with ReeMD instances on the same local-network channel.
+- **LAN clipboard sync** - share text, images, and other clipboard formats with ReeMD instances on the same local-network channel.
 - **Live preview extras** — GitHub-flavored Markdown (Markdig), syntax-highlighted code blocks, and inline local images (drag-drop or paste).
 - **Find & replace**, word-wrap toggle, dark/light theme, and per-panel font sizing.
 
@@ -185,7 +185,7 @@ folder).
 
 ## LAN clipboard sync
 
-ReeMD checks the operating system text clipboard and shares changes over persistent TCP
+ReeMD checks the operating system clipboard and shares changes over persistent TCP
 connections with LAN peers. The channel is shown as `LAN clip:` in the toolbar and defaults
 to `ree-md`; it selects the peer group and TCP port shared by all devices on that channel.
 
@@ -194,8 +194,12 @@ connection carries clipboard changes in both directions and uses message acknowl
 prevent echoes. `Peers` remains available for explicit IPv4 addresses when desired; press
 Enter after editing it. To temporarily share with another group, use the same channel name on
 each device and change it back to leave that group. Channel names can contain letters,
-numbers, dots, dashes, and underscores. Clipboard sync is text-only, is limited to 48 KB per
-update, and is not encrypted, so use it only on a trusted local network.
+numbers, dots, dashes, and underscores. Each update carries the clipboard's available text,
+bitmap, and safe byte or string representations as one bundle. Exact platform formats are
+preserved between matching operating systems; text, bitmap, and common encoded image formats
+work across operating systems. File-list and in-process formats are not transferred. Text is
+included in the same 10 MB complete-bundle limit. Sync is not encrypted, so use it only on a
+trusted local network.
 
 The status bar shows listener, send, receive, and error events. Select `Log` beside the channel
 to open the payload-free `clipboard-sync.log` file when diagnosing a network or firewall issue.
