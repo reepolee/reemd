@@ -60,6 +60,18 @@ public sealed class MacClipboardChangeMonitor
         }
     }
 
+    public void AcknowledgeCurrent()
+    {
+        _last_processed_change_count = ReadChangeCount();
+        _pending_change_count = null;
+    }
+
+    public void AcknowledgeRead()
+    {
+        _last_processed_change_count = _pending_change_count;
+        _pending_change_count = null;
+    }
+
     private static nint ReadChangeCount()
     {
         var pasteboard_class = objc_getClass("NSPasteboard");
