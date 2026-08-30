@@ -58,9 +58,27 @@ fi
 
 echo "→ Installing to $INSTALL_DIR..."
 unzip -q "$tmp/$asset" -d "$tmp"
+
+if pgrep -x "$APP" >/dev/null; then
+	echo "→ Closing the running $BUNDLE app..."
+	pkill -x "$APP" || true
+	for _ in {1..20}; do
+		if ! pgrep -x "$APP" >/dev/null; then
+			break
+		fi
+		sleep 0.1
+	done
+fi
+
 mkdir -p "$INSTALL_DIR"
 rm -rf "$INSTALL_DIR/$BUNDLE.app"
 cp -R "$tmp/$BUNDLE.app" "$INSTALL_DIR/"
+
+installed_executable="$INSTALL_DIR/$BUNDLE.app/Contents/MacOS/$APP"
+if [ ! -x "$installed_executable" ]; then
+	echo "ERROR: Installation failed: $installed_executable was not installed." >&2
+	exit 1
+fi
 
 echo "✅ Installed $BUNDLE.app to $INSTALL_DIR"
 open "$INSTALL_DIR/$BUNDLE.app"

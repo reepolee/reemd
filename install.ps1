@@ -45,9 +45,29 @@ Remove-Item $tmpZip -Force
 # Install
 # ──────────────────────────────────────────────
 
+$runningProcesses = Get-Process -Name $AppName -ErrorAction SilentlyContinue
+if ($null -ne $runningProcesses) {
+	Write-Host "→ Closing the running $AppName app..."
+	foreach ($runningProcess in @($runningProcesses)) {
+		Stop-Process -Id $runningProcess.Id -Force
+	}
+}
+
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 $target = Join-Path $InstallDir "$AppName.exe"
-Copy-Item (Join-Path $extractDir "$AppName.exe") $target -Force
+$source = Join-Path $extractDir "$AppName.exe"
+try {
+	Copy-Item $source $target -Force -ErrorAction Stop
+} catch {
+	Write-Error "Installation failed: could not copy $source to $target. $_"
+	exit 1
+}
+
+if (-not (Test-Path -Path $target -PathType Leaf)) {
+	Write-Error "Installation failed: $target was not installed."
+	exit 1
+}
+
 Remove-Item $extractDir -Recurse -Force
 
 Write-Host "  Installed to $target"
