@@ -24,9 +24,6 @@ public partial class MainWindow : SukiWindow
     private readonly GitHubService _gitHubService = new();
     private readonly ClipboardSyncService _clipboardSyncService;
     private readonly SemaphoreSlim _clipboardAccessLock = new(1, 1);
-    private readonly MacClipboardChangeMonitor? _macClipboardChangeMonitor = OperatingSystem.IsMacOS()
-        ? new MacClipboardChangeMonitor()
-        : null;
 
     private readonly HashSet<string> _pinnedFilenames = [];
     private readonly ObservableCollection<FileEntry> _fileList = [];
@@ -235,12 +232,14 @@ public partial class MainWindow : SukiWindow
         }
     }
 
-    private async Task<bool> HasClipboardChangedAsync()
+    private Task<bool> HasClipboardChangedAsync()
     {
-        if (_macClipboardChangeMonitor == null) return true;
+        return Task.FromResult(!OperatingSystem.IsMacOS());
+    }
 
-        var changeCheckTask = Task.Run(_macClipboardChangeMonitor.HasChanged);
-        return await changeCheckTask;
+    private async Task PublishClipboardAsync()
+    {
+        await _clipboardSyncService.PublishCurrentClipboardAsync();
     }
 
     private async Task SetClipboardTextAsync(string text)

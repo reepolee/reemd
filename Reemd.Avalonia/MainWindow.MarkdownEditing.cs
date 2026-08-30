@@ -34,7 +34,11 @@ public partial class MainWindow
     private void ContextMenu_Redo_Click(object? sender, RoutedEventArgs e) => Editor.Redo();
 
     private void ContextMenu_Cut_Click(object? sender, RoutedEventArgs e) => Editor.Cut();
-    private void ContextMenu_Copy_Click(object? sender, RoutedEventArgs e) => Editor.Copy();
+    private void ContextMenu_Copy_Click(object? sender, RoutedEventArgs e)
+    {
+        Editor.Copy();
+        _ = PublishClipboardAsync();
+    }
     private void ContextMenu_Paste_Click(object? sender, RoutedEventArgs e) => HandlePaste();
 
     private void ContextMenu_Bold_Click(object? sender, RoutedEventArgs e) => InsertMarkdownWrapper("**");

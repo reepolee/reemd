@@ -125,6 +125,11 @@ public sealed class ClipboardSyncService : IDisposable
         }
     }
 
+    public Task PublishCurrentClipboardAsync()
+    {
+        return SendChangedClipboardAsync(CancellationToken.None, true);
+    }
+
     public void Stop()
     {
         lock (_lifecycle_lock)
@@ -151,7 +156,7 @@ public sealed class ClipboardSyncService : IDisposable
             {
                 if (Environment.TickCount64 < Volatile.Read(ref _poll_suspended_until)) continue;
 
-                await SendChangedClipboardAsync(cancellation_token).ConfigureAwait(false);
+                await SendChangedClipboardAsync(cancellation_token, false).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -159,14 +164,17 @@ public sealed class ClipboardSyncService : IDisposable
         }
     }
 
-    private async Task SendChangedClipboardAsync(CancellationToken cancellation_token)
+    private async Task SendChangedClipboardAsync(CancellationToken cancellation_token, bool force_publish)
     {
         if (!await _poll_lock.WaitAsync(0, cancellation_token).ConfigureAwait(false)) return;
 
         try
         {
-            var clipboard_changed = await _clipboard_change_checker().ConfigureAwait(false);
-            if (!clipboard_changed) return;
+            if (!force_publish)
+            {
+                var clipboard_changed = await _clipboard_change_checker().ConfigureAwait(false);
+                if (!clipboard_changed) return;
+            }
 
             var clipboard_text = await _clipboard_text_reader().ConfigureAwait(false);
             if (clipboard_text == null || clipboard_text == _last_clipboard_text) return;
@@ -291,6 +299,9 @@ public sealed class ClipboardSyncService : IDisposable
             catch (JsonException)
             {
                 _logger.Log("Clipboard TCP ignored malformed payload");
+            }
+            catch (EndOfStreamException)
+            {
             }
             catch (Exception exception)
             {

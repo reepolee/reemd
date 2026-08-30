@@ -304,6 +304,15 @@ public partial class MainWindow
             return;
         }
 
+        var copyModifiers = OperatingSystem.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control;
+        if (e.Key == Key.C && e.KeyModifiers == copyModifiers)
+        {
+            Editor.Copy();
+            _ = PublishClipboardAsync();
+            e.Handled = true;
+            return;
+        }
+
         // PageDown / PageUp — page the editor by one viewport height.
         // Handled explicitly because Avalonia's built-in TextBox paging is
         // unreliable on macOS for the dedicated Page Up / Page Down keys.
