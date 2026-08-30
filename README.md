@@ -195,6 +195,9 @@ group. Channel names can contain letters, numbers, dots, dashes, and underscores
 sync is text-only, is limited to 48 KB per update, and is not encrypted, so use it only on a
 trusted local network.
 
+The status bar shows listener, send, receive, and error events. Select `Log` beside the channel
+to open the payload-free `clipboard-sync.log` file when diagnosing a network or firewall issue.
+
 ## License
 
 [MIT](LICENSE)

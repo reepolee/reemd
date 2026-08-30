@@ -108,6 +108,7 @@ public partial class MainWindow
             CursorPositionText.Foreground = new SolidColorBrush(Colors.White);
             GitHubStatusText.Foreground = new SolidColorBrush(Colors.White);
             LastSyncText.Foreground = new SolidColorBrush(Colors.White);
+            ClipboardSyncStatusText.Foreground = new SolidColorBrush(Colors.White);
 
             // Toolbar
             FolderCombo.Background = new SolidColorBrush(Color.FromRgb(0x3C, 0x3C, 0x3C));
@@ -168,6 +169,7 @@ public partial class MainWindow
             CursorPositionText.Foreground = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66));
             GitHubStatusText.Foreground = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66));
             LastSyncText.Foreground = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66));
+            ClipboardSyncStatusText.Foreground = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66));
 
             // Toolbar
             FolderCombo.Background = new SolidColorBrush(Colors.White);

@@ -78,10 +78,21 @@ public partial class ProjectEditDialog : Window
 
         Opened += (_, _) =>
         {
+            SetPreferredDialogHeight();
             RefreshList();
             if (ProjectList.ItemCount > 0)
                 ProjectList.SelectedIndex = 0;
         };
+    }
+
+    private void SetPreferredDialogHeight()
+    {
+        var screen = Screens.ScreenFromWindow(this);
+        if (screen == null) return;
+
+        var screenHeight = screen.WorkingArea.Height / screen.Scaling;
+        var preferredHeight = screenHeight * 0.75;
+        Height = Math.Max(MinHeight, preferredHeight);
     }
 
     private void RefreshList()

@@ -254,4 +254,16 @@ public partial class MainWindow
         SaveSettings();
         SetStatus($"Clipboard sync channel: {clipboardChannel}");
     }
+
+    private void BtnOpenClipboardLog_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        try
+        {
+            ProcessLauncher.OpenWithDefaultApp(_clipboardSyncService.LogPath);
+        }
+        catch (Exception exception)
+        {
+            SetStatus($"Cannot open clipboard log: {exception.Message}");
+        }
+    }
 }

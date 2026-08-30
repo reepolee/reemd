@@ -122,6 +122,7 @@ public partial class MainWindow : SukiWindow
         LoadSettings();
         ClipboardChannelBox.Text = _clipboardChannel;
         _clipboardSyncService = new ClipboardSyncService(GetClipboardTextAsync, SetClipboardTextAsync, _clipboardChannel);
+        _clipboardSyncService.StatusChanged += ClipboardSyncService_StatusChanged;
         _gitHubService.LoadUsedRepos();
 
         // Load project shortcut toolbar buttons
@@ -223,6 +224,11 @@ public partial class MainWindow : SukiWindow
                 await clipboard.SetTextAsync(text);
         });
         await clipboardOperation;
+    }
+
+    private void ClipboardSyncService_StatusChanged(string message)
+    {
+        Dispatcher.UIThread.Post(() => ClipboardSyncStatusText.Text = message);
     }
 
     #region Cursor Position Memory

@@ -19,10 +19,15 @@ public sealed class ClipboardSyncService : IDisposable
     private readonly string _senderId = Guid.NewGuid().ToString("N");
     private readonly SemaphoreSlim _pollLock = new(1, 1);
     private readonly object _lifecycleLock = new();
+    private readonly ClipboardSyncLogger _logger = new();
     private string _channel;
     private string? _lastClipboardText;
     private UdpClient? _udpClient;
     private CancellationTokenSource? _cancellationTokenSource;
+
+    public event Action<string>? StatusChanged;
+
+    public string LogPath => _logger.LogPath;
 
     public ClipboardSyncService(
         Func<Task<string?>> clipboardTextReader,
@@ -47,20 +52,35 @@ public sealed class ClipboardSyncService : IDisposable
         {
             if (_cancellationTokenSource != null) return;
 
-            var endpoint = GetChannelEndpoint(_channel);
-            var udpClient = new UdpClient(AddressFamily.InterNetwork);
-            udpClient.ExclusiveAddressUse = false;
-            udpClient.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-            udpClient.Client.Bind(new IPEndPoint(IPAddress.Any, endpoint.Port));
-            udpClient.JoinMulticastGroup(endpoint.Address);
-            udpClient.MulticastLoopback = true;
+            UdpClient? udpClient = null;
+            try
+            {
+                var endpoint = GetChannelEndpoint(_channel);
+                udpClient = new UdpClient(AddressFamily.InterNetwork);
+                udpClient.ExclusiveAddressUse = false;
+                udpClient.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+                udpClient.Client.Bind(new IPEndPoint(IPAddress.Any, endpoint.Port));
+                udpClient.JoinMulticastGroup(endpoint.Address);
+                udpClient.MulticastLoopback = true;
 
-            var cancellationTokenSource = new CancellationTokenSource();
-            _udpClient = udpClient;
-            _cancellationTokenSource = cancellationTokenSource;
+                var cancellationTokenSource = new CancellationTokenSource();
+                _udpClient = udpClient;
+                _cancellationTokenSource = cancellationTokenSource;
 
-            _ = ReceiveLoopAsync(udpClient, cancellationTokenSource.Token);
-            _ = PollClipboardLoopAsync(cancellationTokenSource.Token);
+                _ = ReceiveLoopAsync(udpClient, cancellationTokenSource.Token);
+                _ = PollClipboardLoopAsync(cancellationTokenSource.Token);
+                Report($"Clipboard listening: {_channel} ({endpoint.Address}:{endpoint.Port})");
+            }
+            catch (SocketException exception)
+            {
+                udpClient?.Dispose();
+                Report($"Clipboard listener error: {exception.SocketErrorCode}");
+            }
+            catch (Exception exception)
+            {
+                udpClient?.Dispose();
+                Report($"Clipboard listener error: {exception.GetType().Name}");
+            }
         }
     }
 
@@ -71,6 +91,7 @@ public sealed class ClipboardSyncService : IDisposable
         Stop();
         _channel = channel;
         _lastClipboardText = null;
+        _logger.Log($"Clipboard channel changed: {channel}");
         Start();
     }
 
@@ -86,6 +107,7 @@ public sealed class ClipboardSyncService : IDisposable
             cancellationTokenSource?.Cancel();
             udpClient?.Dispose();
             cancellationTokenSource?.Dispose();
+            _logger.Log("Clipboard listener stopped");
         }
     }
 
@@ -117,22 +139,29 @@ public sealed class ClipboardSyncService : IDisposable
             _lastClipboardText = clipboardText;
             var envelope = new ClipboardEnvelope(1, _channel, _senderId, clipboardText);
             var payload = JsonSerializer.SerializeToUtf8Bytes(envelope);
-            if (payload.Length > MaxPayloadBytes) return;
+            if (payload.Length > MaxPayloadBytes)
+            {
+                Report($"Clipboard update skipped: {payload.Length} bytes exceeds {MaxPayloadBytes} byte limit");
+                return;
+            }
 
             var udpClient = _udpClient;
             if (udpClient == null) return;
 
             var endpoint = GetChannelEndpoint(_channel);
             await udpClient.SendAsync(payload, endpoint, cancellationToken).ConfigureAwait(false);
+            Report($"Clipboard sent: {payload.Length} bytes on {_channel}");
         }
         catch (OperationCanceledException)
         {
         }
-        catch (SocketException)
+        catch (SocketException exception)
         {
+            Report($"Clipboard send error: {exception.SocketErrorCode}");
         }
-        catch
+        catch (Exception exception)
         {
+            Report($"Clipboard send error: {exception.GetType().Name}");
         }
         finally
         {
@@ -154,6 +183,7 @@ public sealed class ClipboardSyncService : IDisposable
                 }
                 catch (JsonException)
                 {
+                    _logger.Log($"Clipboard ignored malformed packet from {result.RemoteEndPoint}");
                     continue;
                 }
 
@@ -167,9 +197,11 @@ public sealed class ClipboardSyncService : IDisposable
                 try
                 {
                     await _clipboardTextWriter(envelope.Text).ConfigureAwait(false);
+                    Report($"Clipboard received: {textSize} bytes from {result.RemoteEndPoint.Address}");
                 }
-                catch
+                catch (Exception exception)
                 {
+                    Report($"Clipboard write error: {exception.GetType().Name}");
                 }
             }
         }
@@ -179,8 +211,9 @@ public sealed class ClipboardSyncService : IDisposable
         catch (ObjectDisposedException)
         {
         }
-        catch (SocketException)
+        catch (SocketException exception)
         {
+            Report($"Clipboard receive error: {exception.SocketErrorCode}");
         }
     }
 
@@ -197,6 +230,12 @@ public sealed class ClipboardSyncService : IDisposable
     {
         Stop();
         _pollLock.Dispose();
+    }
+
+    private void Report(string message)
+    {
+        _logger.Log(message);
+        StatusChanged?.Invoke(message);
     }
 
     private sealed record ClipboardEnvelope(int Version, string Channel, string SenderId, string Text);
