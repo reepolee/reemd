@@ -308,10 +308,11 @@ public partial class MainWindow
         {
             Title = "Rename File",
             Width = 400,
-            Height = 140,
+            Height = 170,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             CanResize = false,
             Background = new SolidColorBrush(bg),
+            Foreground = new SolidColorBrush(fg),
             FontSize = 14
         };
 
@@ -323,7 +324,12 @@ public partial class MainWindow
             Foreground = new SolidColorBrush(fg)
         });
 
-        var textBox = new TextBox { Text = oldNameWithoutExt, Padding = new Thickness(6, 3, 6, 3) };
+        var textBox = new TextBox
+        {
+            Text = oldNameWithoutExt,
+            Padding = new Thickness(6, 3, 6, 3),
+            Foreground = new SolidColorBrush(fg)
+        };
 
         var buttonPanel = new StackPanel
         {
@@ -332,8 +338,22 @@ public partial class MainWindow
             Spacing = 6
         };
 
-        var okBtn = new Button { Content = "OK", Width = 70, Height = 24, IsDefault = true };
-        var cancelBtn = new Button { Content = "Cancel", Width = 70, Height = 24, IsCancel = true };
+        var okBtn = new Button
+        {
+            Content = "OK",
+            MinWidth = 70,
+            Padding = new Thickness(10, 4),
+            Foreground = new SolidColorBrush(fg),
+            IsDefault = true
+        };
+        var cancelBtn = new Button
+        {
+            Content = "Cancel",
+            MinWidth = 70,
+            Padding = new Thickness(10, 4),
+            Foreground = new SolidColorBrush(fg),
+            IsCancel = true
+        };
 
         buttonPanel.Children.Add(okBtn);
         buttonPanel.Children.Add(cancelBtn);

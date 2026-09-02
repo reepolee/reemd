@@ -60,6 +60,8 @@ public sealed class HotKeyService : IDisposable
     private static IntPtr _hwnd = IntPtr.Zero;
     private static WndProcDelegate? _wndProcDelegate;
     private static string _className = "ReemdHotKeyWindow";
+    private readonly Dictionary<int, long> _lastWindowsHotKeyTicks = new();
+    private const long WindowsHotKeyDebounceMilliseconds = 500;
 
     // macOS state (rooted to prevent GC)
     private static CarbonEventHandler? _carbonHandlerDelegate;
@@ -81,6 +83,7 @@ public sealed class HotKeyService : IDisposable
         UnregisterAll();
         _pending.Clear();
         _registeredNames.Clear();
+        _lastWindowsHotKeyTicks.Clear();
         _nextId = 1;
     }
 
@@ -148,12 +151,27 @@ public sealed class HotKeyService : IDisposable
         {
             var id = wParam.ToInt32();
             if (_activeInstance != null &&
-                _activeInstance._registeredNames.TryGetValue(id, out var name))
+                _activeInstance.TryGetWindowsHotKeyName(id, out var name))
             {
                 _activeInstance.HotKeyPressed?.Invoke(name);
             }
         }
         return DefWindowProc(hWnd, msg, wParam, lParam);
+    }
+
+    private bool TryGetWindowsHotKeyName(int id, out string name)
+    {
+        name = string.Empty;
+        if (!_registeredNames.TryGetValue(id, out var registeredName)) return false;
+
+        var now = Environment.TickCount64;
+        if (_lastWindowsHotKeyTicks.TryGetValue(id, out var lastTick) &&
+            now - lastTick < WindowsHotKeyDebounceMilliseconds)
+            return false;
+
+        _lastWindowsHotKeyTicks[id] = now;
+        name = registeredName;
+        return true;
     }
 
     #endregion
@@ -304,6 +322,7 @@ public sealed class HotKeyService : IDisposable
 
         _registeredNames.Clear();
         _pending.Clear();
+        _lastWindowsHotKeyTicks.Clear();
     }
 
     #region P/Invoke
