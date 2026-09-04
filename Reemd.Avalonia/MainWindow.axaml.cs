@@ -327,6 +327,8 @@ public partial class MainWindow : SukiWindow
         Close();
     }
 
+    internal void FocusEditor() => Editor.Focus();
+
     private void Window_Closing(object? sender, WindowClosingEventArgs e)
     {
         if (_forceClose)
