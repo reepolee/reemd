@@ -70,10 +70,13 @@ public partial class MainWindow
         if (!_isDirty)
         {
             var (pullOk, pullMsg) = await _gitHubService.PullAsync(_markdownFolder);
-            if (pullOk && File.Exists(_currentFilePath))
+            // Re-check _isDirty: the pull above is awaited, so the user may have typed
+            // in the meantime. Applying stale disk content now would silently discard
+            // those edits (and mark them "saved"), so only apply if still clean.
+            if (pullOk && !_isDirty && File.Exists(_currentFilePath))
             {
                 var diskContent = await File.ReadAllTextAsync(_currentFilePath);
-                if (diskContent != Editor.Text)
+                if (!_isDirty && diskContent != Editor.Text)
                 {
                     _isLoadingDocument = true;
                     Editor.Text = diskContent;
@@ -133,10 +136,12 @@ public partial class MainWindow
             GitHubStatusText.Text = "☁️ Pulled";
             SetStatus(message);
 
-            if (File.Exists(_currentFilePath))
+            // Only apply disk content if the user hasn't started editing since the pull
+            // began — otherwise this would silently overwrite/discard their new edits.
+            if (!_isDirty && File.Exists(_currentFilePath))
             {
                 var diskContent = await File.ReadAllTextAsync(_currentFilePath);
-                if (diskContent != Editor.Text)
+                if (!_isDirty && diskContent != Editor.Text)
                 {
                     _isLoadingDocument = true;
                     Editor.Text = diskContent;
