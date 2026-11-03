@@ -75,6 +75,15 @@ public partial class MainWindow
     {
         if (_isSyncingScroll) return;
 
+        // Typing in a large document changes the editor's Extent (re-wrap/re-measure)
+        // without the user scrolling. Offset/Extent would then yield a different ratio
+        // and drag the preview (and, via its echo, the editor) to a wrong position.
+        // Only real offset changes are scroll events worth syncing.
+        if (Math.Abs(e.OffsetDelta.Y) < 0.5) return;
+
+        // Never move the preview while the user is typing.
+        if (IsTyping) return;
+
         if (_editorScrollViewer != null)
         {
             var ratio = ScrollableHeight(_editorScrollViewer) > 0
@@ -125,7 +134,7 @@ public partial class MainWindow
 
     private void OnPreviewWebMessageReceived(object? sender, WebMessageReceivedEventArgs e)
     {
-        if (_isSyncingScroll || _editorScrollViewer == null || _currentFilePath == null) return;
+        if (_isSyncingScroll || IsTyping || _editorScrollViewer == null || _currentFilePath == null) return;
 
         try
         {

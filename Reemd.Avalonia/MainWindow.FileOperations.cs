@@ -127,6 +127,7 @@ public partial class MainWindow
     {
         if (_isLoadingDocument) return;
 
+        _lastTypingTicks = Environment.TickCount64;
         _isDirty = true;
         UpdateSavedIndicator(false);
 

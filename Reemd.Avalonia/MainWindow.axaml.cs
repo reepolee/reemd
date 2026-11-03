@@ -68,6 +68,8 @@ public partial class MainWindow : SukiWindow
 
     private ScrollViewer? _editorScrollViewer;
     private bool _isSyncingScroll;
+    private long _lastTypingTicks;
+    private bool IsTyping => Environment.TickCount64 - _lastTypingTicks < 2000;
     private bool _isPreviewReady;
     private readonly Dictionary<string, double> _scrollRatios = [];
     private FileSystemWatcher? _fileWatcher;
