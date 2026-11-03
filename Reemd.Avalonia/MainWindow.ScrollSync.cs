@@ -16,6 +16,8 @@ public partial class MainWindow
     private bool _previewAdapterReady;
     private double _lastAppliedPreviewRatio = double.NaN;
     private int _editorPageToken;
+    private double _previewScrollTop;
+    private bool _restorePreviewPixels;
 
     #region Scroll Sync
 
@@ -58,14 +60,22 @@ public partial class MainWindow
         // the editor to the wrong place.
         _ = Preview.InvokeScript(
             "(function(){ var d=document.documentElement; window.__reemdScrollRatio=0; window.__reemdIgnore=null;" +
-            "window.__reemdSet=function(r){var sh=d.scrollHeight-d.clientHeight;window.__reemdIgnore=r;d.scrollTop=r*sh;" +
+            "window.__reemdSetPx=function(t){window.__reemdIgnore=-1;d.style.scrollBehavior='auto';d.scrollTop=t;d.style.scrollBehavior='';clearTimeout(window.__reemdIgnoreT);window.__reemdIgnoreT=setTimeout(function(){window.__reemdIgnore=null},300);};" +
+            "window.__reemdSet=function(r){var sh=d.scrollHeight-d.clientHeight;window.__reemdIgnore=r;d.style.scrollBehavior='auto';d.scrollTop=r*sh;d.style.scrollBehavior='';" +
             "clearTimeout(window.__reemdIgnoreT);window.__reemdIgnoreT=setTimeout(function(){window.__reemdIgnore=null},300);};" +
             "window.addEventListener('scroll',function(){var sh=d.scrollHeight-d.clientHeight;var r=sh>0?d.scrollTop/sh:0;window.__reemdScrollRatio=r;" +
-            "if(window.__reemdIgnore!==null)return;" +
-            "try{invokeCSharpAction(JSON.stringify({type:'scroll',ratio:r}))}catch(e){}}); })();");
+            "try{invokeCSharpAction(JSON.stringify({type:'scroll',ratio:r,top:d.scrollTop,prog:window.__reemdIgnore!==null}))}catch(e){}}); })();");
 
         // Restore scroll position for this file after navigation
-        if (_currentFilePath != null && _scrollRatios.TryGetValue(_currentFilePath, out var ratio) && ratio > 0)
+        if (_restorePreviewPixels)
+        {
+            // Re-render while editing: put the preview back at the exact pixel
+            // position it had, retrying while the new page finishes laying out.
+            _restorePreviewPixels = false;
+            var top = _previewScrollTop.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            _ = Preview.InvokeScript("window.__reemdSetPx(" + top + ");setTimeout(function(){window.__reemdSetPx(" + top + ")},150);setTimeout(function(){window.__reemdSetPx(" + top + ")},600)");
+        }
+        else if (_currentFilePath != null && _scrollRatios.TryGetValue(_currentFilePath, out var ratio) && ratio > 0)
         {
             _ = Preview.InvokeScript("window.__reemdSet(" + ratio.ToString(System.Globalization.CultureInfo.InvariantCulture) + ")");
         }
@@ -134,13 +144,13 @@ public partial class MainWindow
 
     private void OnPreviewWebMessageReceived(object? sender, WebMessageReceivedEventArgs e)
     {
-        if (_isSyncingScroll || IsTyping || _editorScrollViewer == null || _currentFilePath == null) return;
-
         try
         {
             if (string.IsNullOrEmpty(e.Body)) return;
             var msg = JsonSerializer.Deserialize<ScrollMessage>(e.Body);
             if (msg?.type != "scroll") return;
+            if (!msg.prog) _previewScrollTop = msg.top;
+            if (msg.prog || _isSyncingScroll || IsTyping || _editorScrollViewer == null || _currentFilePath == null) return;
 
             _isSyncingScroll = true;
             var ratio = Math.Clamp(msg.ratio, 0.0, 1.0);
@@ -161,6 +171,8 @@ public partial class MainWindow
     {
         public string type { get; set; } = "";
         public double ratio { get; set; }
+        public double top { get; set; }
+        public bool prog { get; set; }
     }
 
     private void RestoreEditorScroll()
