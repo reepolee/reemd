@@ -51,15 +51,23 @@ public partial class MainWindow
 
         _isPreviewReady = true;
 
-        // Inject scroll sync script into the page
+        // Inject scroll sync script into the page. Scroll events caused by our own
+        // programmatic scrolling (restore after re-render, editor->preview sync) are
+        // swallowed so they never bounce back into the editor; otherwise a freshly
+        // re-rendered (still laying out) large page reports bogus ratios and drags
+        // the editor to the wrong place.
         _ = Preview.InvokeScript(
-            "(function(){ window.__reemdScrollRatio=0; window.addEventListener('scroll',function(){var sh=document.documentElement.scrollHeight-document.documentElement.clientHeight;var r=sh>0?document.documentElement.scrollTop/sh:0;window.__reemdScrollRatio=r;try{invokeCSharpAction(JSON.stringify({type:'scroll',ratio:r}))}catch(e){}}); })();");
+            "(function(){ var d=document.documentElement; window.__reemdScrollRatio=0; window.__reemdIgnore=null;" +
+            "window.__reemdSet=function(r){var sh=d.scrollHeight-d.clientHeight;window.__reemdIgnore=r;d.scrollTop=r*sh;" +
+            "clearTimeout(window.__reemdIgnoreT);window.__reemdIgnoreT=setTimeout(function(){window.__reemdIgnore=null},300);};" +
+            "window.addEventListener('scroll',function(){var sh=d.scrollHeight-d.clientHeight;var r=sh>0?d.scrollTop/sh:0;window.__reemdScrollRatio=r;" +
+            "if(window.__reemdIgnore!==null)return;" +
+            "try{invokeCSharpAction(JSON.stringify({type:'scroll',ratio:r}))}catch(e){}}); })();");
 
         // Restore scroll position for this file after navigation
         if (_currentFilePath != null && _scrollRatios.TryGetValue(_currentFilePath, out var ratio) && ratio > 0)
         {
-            _ = Preview.InvokeScript(
-                "document.documentElement.scrollTop=" + ratio.ToString(System.Globalization.CultureInfo.InvariantCulture) + "*(document.documentElement.scrollHeight-document.documentElement.clientHeight)");
+            _ = Preview.InvokeScript("window.__reemdSet(" + ratio.ToString(System.Globalization.CultureInfo.InvariantCulture) + ")");
         }
     }
 
@@ -108,7 +116,7 @@ public partial class MainWindow
         try
         {
             await Preview.InvokeScript(
-                "document.documentElement.scrollTop=" + ratio.ToString(System.Globalization.CultureInfo.InvariantCulture) + "*(document.documentElement.scrollHeight-document.documentElement.clientHeight)");
+                "window.__reemdSet&&window.__reemdSet(" + ratio.ToString(System.Globalization.CultureInfo.InvariantCulture) + ")");
         }
         catch
         {
